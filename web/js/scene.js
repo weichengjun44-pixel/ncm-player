@@ -18,7 +18,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const BANDS = 128;
 const BOX = 110;                 // 盒子半边长（再次放大 → 空间更辽阔）
-const COVER_W = 66;             // 封面粒子平面宽度（放大一点，细节更看得清）
+const COVER_W = 74;             // 封面粒子平面宽度（放大一点，细节更看得清）
 const LYRIC_W = 64;             // 歌词粒子平面宽度
 const IVORY = new THREE.Color('#fff3e2');    // 星尘主色：暖白（不是冷白）
 const AMBER = new THREE.Color('#ffb35c');    // 琥珀：暖色点缀
@@ -118,10 +118,10 @@ const FRAG_COVER = /* glsl */ `
   varying float vAlpha;
   void main() {
     float d = length(gl_PointCoord - 0.5);
-    float m = smoothstep(0.5, 0.30, d);          // 边缘更硬 → 细节更锐（软边会糊成一团光）
+    float m = smoothstep(0.5, 0.38, d);          // 近乎实心圆点：细节最锐（软边会糊成一团光）
     if (m <= 0.004) discard;
     // 亮度压到 0.42：现在粒子密度翻倍，叠加后如果还按 0.62 会过曝白掉
-    gl_FragColor = vec4(vColor * (0.40 + uLevel * 0.26), m * vAlpha * (0.26 + 0.36 * clamp(uMorph,0.0,1.0) + uLevel * 0.20));
+    gl_FragColor = vec4(vColor * (0.54 + uLevel * 0.28), m * vAlpha * (0.34 + 0.42 * clamp(uMorph,0.0,1.0) + uLevel * 0.20));
   }
 `;
 
@@ -653,7 +653,7 @@ export class VisualEngine {
     pts.frustumCulled = false;
     const group = new THREE.Group();
     group.add(pts);
-    group.position.set(0, BOX * 0.40, 0);       // 浮在封面上方（盒子变大后按比例贴近封面）
+    group.position.set(0, BOX * 0.46, 0);       // 浮在封面上方（封面放大后同步抬高）
     this.scene.add(group);
 
     // 换句时旧的那行不直接消失，而是往回收（散掉），过渡更细
@@ -693,7 +693,7 @@ export class VisualEngine {
 
   /* ---------------------------------------------------------- 封面 → 粒子 */
   /** 把专辑封面采样成粒子云；换歌时从远处飞回来重组（morph 0→1） */
-  async setCoverToParticles(url, { width = 288 } = {}) {
+  async setCoverToParticles(url, { width = 320 } = {}) {
     if (!url) { this.clearCover(); return; }
     let img;
     try {
@@ -768,7 +768,7 @@ export class VisualEngine {
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 }, uBass: { value: 0 }, uMid: { value: 0 }, uTreble: { value: 0 },
-        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 0.72 },
+        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 0.50 },
       },
       vertexShader: VERT_COVER,
       fragmentShader: FRAG_COVER,
@@ -853,7 +853,7 @@ export class VisualEngine {
     }
     if (this.lyricGroup) {
       this.lyricGroup.quaternion.copy(this.camera.quaternion);
-      this.lyricGroup.position.y = BOX * 0.40 + Math.sin(this.time * 0.5) * 1.3;
+      this.lyricGroup.position.y = BOX * 0.46 + Math.sin(this.time * 0.5) * 1.3;
     }
     // 上一句正在散掉的那组
     if (this.lyricFade) {
