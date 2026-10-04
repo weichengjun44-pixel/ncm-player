@@ -18,9 +18,9 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const BANDS = 128;
-const BOX = 72;                 // 盒子半边长（做大）
-const COVER_W = 54;             // 封面粒子平面宽度
-const LYRIC_W = 62;             // 歌词粒子平面宽度
+const BOX = 96;                 // 盒子半边长（再次放大 → 空间更辽阔）
+const COVER_W = 56;             // 封面粒子平面宽度
+const LYRIC_W = 64;             // 歌词粒子平面宽度
 const CYAN = new THREE.Color('#6ee7ff');
 const VIOLET = new THREE.Color('#a78bfa');
 const PINK = new THREE.Color('#ff7ac6');
@@ -118,9 +118,10 @@ const FRAG_COVER = /* glsl */ `
   varying float vAlpha;
   void main() {
     float d = length(gl_PointCoord - 0.5);
-    float m = smoothstep(0.5, 0.03, d);
-    if (m <= 0.002) discard;
-    gl_FragColor = vec4(vColor * (0.62 + uLevel * 0.6), m * vAlpha * (0.30 + 0.45 * clamp(uMorph,0.0,1.0) + uLevel * 0.4));
+    float m = smoothstep(0.5, 0.20, d);          // 边缘收紧 → 画面细节看得清（软边会糊）
+    if (m <= 0.004) discard;
+    // 亮度压到 0.42：现在粒子密度翻倍，叠加后如果还按 0.62 会过曝白掉
+    gl_FragColor = vec4(vColor * (0.42 + uLevel * 0.30), m * vAlpha * (0.30 + 0.40 * clamp(uMorph,0.0,1.0) + uLevel * 0.22));
   }
 `;
 
@@ -201,7 +202,7 @@ export class VisualEngine {
     this._fpsAcc = 0;
     this._fpsN = 0;
 
-    this.view = { theta: 0.5, phi: 1.25, radius: 152, vTheta: 0, vPhi: 0 };
+    this.view = { theta: 0.5, phi: 1.25, radius: 178, vTheta: 0, vPhi: 0 };
     this.dragging = false;
     this.lastDrag = 0;
     this.pointer = new THREE.Vector2();
@@ -225,23 +226,29 @@ export class VisualEngine {
     this.renderer.toneMappingExposure = 1.12;
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2(0x04050c, 0.0026);
+    this.scene.fog = new THREE.FogExp2(0x04050c, 0.0036);
     this.camera = new THREE.PerspectiveCamera(56, window.innerWidth / window.innerHeight, 0.1, 4000);
 
-    // ---- 深空星场（盒子之外）----
+    // ---- 深空星场（三层景深：近/中/远，转动时视差明显）----
     {
-      const N = 12000;
+      const N = 16000;
       const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
       const seed = new Float32Array(N), size = new Float32Array(N);
       const c = new THREE.Color();
       for (let i = 0; i < N; i++) {
-        const r = 210 + Math.random() * 900;
+        const band = i % 10;
+        // 三层：30% 近景(视差强) / 30% 中景 / 40% 远景
+        const r = band < 3 ? 130 + Math.random() * 170
+                : band < 6 ? 340 + Math.random() * 320
+                : 700 + Math.random() * 900;
         const th = Math.random() * Math.PI * 2, ph = Math.acos(Math.random() * 2 - 1);
         pos[i * 3] = r * Math.sin(ph) * Math.cos(th);
         pos[i * 3 + 1] = r * Math.cos(ph) * 0.6;
         pos[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
         c.copy(CYAN).lerp(VIOLET, Math.random() * 0.8).lerp(WHITE, Math.random() * 0.12);
-        col[i * 3] = c.r * 0.8; col[i * 3 + 1] = c.g * 0.8; col[i * 3 + 2] = c.b * 0.8;
+        // 近的稍亮、远的更暗 —— 天然的纵深明暗层次
+        const dim = band < 3 ? 1.0 : band < 6 ? 0.72 : 0.5;
+        col[i * 3] = c.r * 0.85 * dim; col[i * 3 + 1] = c.g * 0.85 * dim; col[i * 3 + 2] = c.b * 0.85 * dim;
         seed[i] = Math.random();
         size[i] = 1.4 + Math.random() * 3.2;
       }
@@ -290,6 +297,36 @@ export class VisualEngine {
       this.scene.add(this.walls);
       this.boxEdges = null;        // 边界线不显示
       this.cornerPoints = null;    // 角点也不显示
+    }
+
+    // ---- 盒内体积浮尘：填满内部空间，转动时视差最强，是"空间延伸感"的主力 ----
+    {
+      const N = 11000;
+      const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
+      const seed = new Float32Array(N), size = new Float32Array(N);
+      const c = new THREE.Color();
+      for (let i = 0; i < N; i++) {
+        const r = BOX * 1.02 * Math.pow(Math.random(), 0.5);     // 均匀填满（不是全堆在外壳）
+        const th = Math.random() * Math.PI * 2, ph = Math.acos(Math.random() * 2 - 1);
+        pos[i * 3] = r * Math.sin(ph) * Math.cos(th);
+        pos[i * 3 + 1] = r * Math.cos(ph) * 0.78;
+        pos[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
+        c.copy(CYAN).lerp(VIOLET, Math.random()).lerp(PINK, Math.random() * 0.22);
+        const near = 1 - r / (BOX * 1.05);                       // 越靠中心越亮 → 中心像"核"
+        const dim = 0.22 + near * 0.55;
+        col[i * 3] = c.r * dim; col[i * 3 + 1] = c.g * dim; col[i * 3 + 2] = c.b * dim;
+        seed[i] = Math.random();
+        size[i] = 0.9 + Math.random() * 2.1;
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      g.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
+      g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
+      g.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
+      this.dustMat = pointsMaterial({ uSwirl: { value: 0.02 }, uExpand: { value: 0.55 } });
+      this.dustMat.uniforms.uPixel.value = dpr;
+      this.dust = new THREE.Points(g, this.dustMat);
+      this.scene.add(this.dust);
     }
 
     // ---- 核心光团（用色组里的颜色，不用纯白）----
@@ -393,13 +430,13 @@ export class VisualEngine {
     });
     el.addEventListener('wheel', (e) => {
       e.preventDefault();
-      this.view.radius = Math.max(84, Math.min(320, this.view.radius + e.deltaY * 0.09));
+      this.view.radius = Math.max(110, Math.min(460, this.view.radius + e.deltaY * 0.12));
     }, { passive: false });
     el.addEventListener('dblclick', () => this.resetView());
   }
 
   resetView() {
-    this.view.theta = 0.5; this.view.phi = 1.25; this.view.radius = 152;
+    this.view.theta = 0.5; this.view.phi = 1.25; this.view.radius = 178;
     this.view.vTheta = 0; this.view.vPhi = 0;
   }
 
@@ -548,8 +585,11 @@ export class VisualEngine {
       if (score < bestD) { bestD = score; best = p; }
     }
     best.getHSL(_hslPal);
-    const l = Math.min(0.72, Math.max(0.30, _hslPal.l + (lum - 0.5) * 0.22));
-    return _tmpOut.setHSL(_hslPal.h, _hslPal.s, l);
+    // 亮度主要跟像素自身的明暗走（权重 0.78）→ 画面层次保得住、看得清；
+    // 色相/饱和度来自色组 → 整体色彩仍然成体系
+    const l = Math.min(0.82, Math.max(0.14, _hslPal.l * 0.42 + lum * 0.78));
+    const s = Math.min(0.95, _hslPal.s * (0.55 + 0.55 * Math.min(1, _hslSrc.s * 2.0)));
+    return _tmpOut.setHSL(_hslPal.h, s, l);
   }
 
   /* ---------------------------------------------------------- 歌词 → 粒子 */
@@ -632,7 +672,7 @@ export class VisualEngine {
     pts.frustumCulled = false;
     const group = new THREE.Group();
     group.add(pts);
-    group.position.set(0, BOX * 0.56, 0);       // 浮在封面上方
+    group.position.set(0, BOX * 0.40, 0);       // 浮在封面上方（盒子变大后按比例贴近封面）
     this.scene.add(group);
 
     // 换句时旧的那行不直接消失，而是往回收（散掉），过渡更细
@@ -672,7 +712,7 @@ export class VisualEngine {
 
   /* ---------------------------------------------------------- 封面 → 粒子 */
   /** 把专辑封面采样成粒子云；换歌时从远处飞回来重组（morph 0→1） */
-  async setCoverToParticles(url, { width = 148 } = {}) {
+  async setCoverToParticles(url, { width = 196 } = {}) {
     if (!url) { this.clearCover(); return; }
     let img;
     try {
@@ -718,10 +758,11 @@ export class VisualEngine {
         if (a < 0.15) continue;
         const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
         if (lum < 0.055) continue;
-        const X = (x - W / 2 + 0.5) * px;
-        const Y = -(y - H / 2 + 0.5) * px;
+        // 亚像素抖动 + 更明显的弧面 → 既有细节又有体积，且不像"整齐的格子"
+        const X = (x - W / 2 + 0.5 + (Math.random() - 0.5)) * px;
+        const Y = -(y - H / 2 + 0.5 + (Math.random() - 0.5)) * px;
         const R2 = (X * X + Y * Y) / (planeW * planeW * 0.25);
-        const Z = (1 - Math.min(R2, 1)) * 3.2;
+        const Z = (1 - Math.min(R2, 1)) * 5.0 + (Math.random() - 0.5) * 0.7;
         homes.push(X, Y, Z);
 
         const rr = 240 + Math.random() * 420;
@@ -746,7 +787,7 @@ export class VisualEngine {
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 }, uBass: { value: 0 }, uMid: { value: 0 }, uTreble: { value: 0 },
-        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 1.4 },
+        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 1.05 },
       },
       vertexShader: VERT_COVER,
       fragmentShader: FRAG_COVER,
@@ -831,7 +872,7 @@ export class VisualEngine {
     }
     if (this.lyricGroup) {
       this.lyricGroup.quaternion.copy(this.camera.quaternion);
-      this.lyricGroup.position.y = BOX * 0.56 + Math.sin(this.time * 0.5) * 1.3;
+      this.lyricGroup.position.y = BOX * 0.40 + Math.sin(this.time * 0.5) * 1.3;
     }
     // 上一句正在散掉的那组
     if (this.lyricFade) {
@@ -847,7 +888,7 @@ export class VisualEngine {
       }
     }
 
-    for (const m of [this.starMat, this.wallMat, this.haloMat]) {
+    for (const m of [this.starMat, this.wallMat, this.haloMat, this.dustMat]) {
       m.uniforms.uTime.value = this.time;
       m.uniforms.uBass.value = bass;
       m.uniforms.uMid.value = mid;
