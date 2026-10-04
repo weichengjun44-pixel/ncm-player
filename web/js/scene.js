@@ -471,54 +471,12 @@ export class VisualEngine {
       this.videoCanvas.height = this.VH;
       this.videoCtx = this.videoCanvas.getContext('2d', { willReadFrequently: true });
 
-      const N = this.VW * this.VH;
-      const planeW = 430;                  // 相机前 260 处：放大 1.43 倍（视口在该处约 287 单位宽 → 画面铺满并溢出）
-      const planeH = planeW * (this.VH / this.VW);
-      const pos = new Float32Array(N * 3);
-      const col = new Float32Array(N * 3);   // 每帧刷新
-      const seed = new Float32Array(N);
-      const size = new Float32Array(N);
-      const cellW = planeW / this.VW;
-      const cellH = planeH / this.VH;
-      for (let y = 0; y < this.VH; y++) {
-        for (let x = 0; x < this.VW; x++) {
-          const i = y * this.VW + x;
-          pos[i * 3] = (x - this.VW / 2 + 0.5) * cellW + (Math.random() - 0.5) * cellW * 0.7;
-          pos[i * 3 + 1] = -(y - this.VH / 2 + 0.5) * cellH + (Math.random() - 0.5) * cellH * 0.7;
-          pos[i * 3 + 2] = (Math.random() - 0.5) * 2.5;
-          seed[i] = Math.random();
-          size[i] = 1.75 + Math.random() * 0.7;  // 随格子同步缩小 → 密度与亮度不变，只是更细
-        }
-      }
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      g.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
-      g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
-      g.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
-      // 边缘渐隐：外圈 18% 逐渐淡出 → 不会出现一块生硬的"视频方块"
-      this.videoFade = new Float32Array(N);
-      for (let i = 0; i < N; i++) {
-        const px = i % this.VW;
-        const py = Math.floor(i / this.VW);
-        const nx = Math.abs(px / (this.VW - 1) * 2 - 1);
-        const ny = Math.abs(py / (this.VH - 1) * 2 - 1);
-        const e = Math.max(nx, ny);
-        // 只保留边缘渐隐（外圈 18% 淡出，避免出现生硬的"视频方块"）。
-        // 中央减光已按需求移除：原来封面正后被压到 12% 来保护封面，但在画面正中形成了
-        // 一块长方形暗区（用户报的"长方形黑洞"），现在 MV 整块连续铺满。
-        this.videoFade[i] = 1 - Math.min(1, Math.max(0, (e - 0.82) / 0.18)) ** 1.5;
-      }
-      this.videoGeo = g;
-      // uSwirl 必须为 0：这是给星场/浮尘的绕 Y 轴自转，但对 MV 这块平面是灾难——
-      // 平面 z≈0 时 r=|x|，正中一列粒子 |x|≈0 旋转速度是边缘的 8 倍，
-      // 播放十几分钟后正中被扭转近一整圈，整块平面绞成管状（用户报的"圆柱形"）。
       this.videoMat = pointsMaterial({ uSwirl: { value: 0 }, uExpand: { value: 0.06 } });
       this.videoMat.uniforms.uPixel.value = dpr;
-      this.videoPoints = new THREE.Points(g, this.videoMat);
-      this.videoPoints.frustumCulled = false;
-      this.videoPoints.visible = false;
-      this.videoPoints.position.set(0, 0, -260);     // 初始位置，之后每帧由 updateVideoFollow() 跟随相机
-      this.scene.add(this.videoPoints);              // 放场景里（不是相机下）→ 才能做出惯性/甩动效果
+      // 默认：整屏铺满（相机前 260 处视口约 287 单位宽 → ×1.5 溢出铺满）
+      // 注意 uSwirl 必须为 0：那是给星场/浮尘的绕 Y 自转，对 z≈0 的平面是灾难
+      // （正中一列 |x|≈0 的角速度是边缘的 8 倍，会整块绞成管状——用户报过的"圆柱形"）
+      this.buildVideoGrid(this.VW, this.VH, 430);
       this.videoLast = 0;
       this.videoUrl = null;
       this.videoAlpha = 1.35;              // MV 亮度系数（用户要求"更亮、清晰可见"；封面正后另有 88% 减光保护封面）
@@ -981,12 +939,17 @@ export class VisualEngine {
        用户拖动时立刻让位，松手 3.5 秒后重新接管
      - 舞台而不是盒子：曝光更亮、雾更淡、泛光更强，转场像舞台灯位而非黑盒       */
   setBox(mode) {
-    const next = mode === 3 ? 3 : (mode === 2 ? 2 : 1);
+    const next = (mode === 2 || mode === 3 || mode === 4) ? mode : 1;
     if (next === this.boxMode) return;
     const prev = this.boxMode;
     this.boxMode = next;
-    // 盒子3 = 盒子1 的样式但不要封面（MV 主体 + 歌词在其下方）
-    this.hideCover = next === 3;
+    // 盒子3 = 盒子1 不要封面；盒子4 = 盒子3 + MV 缩成正中一块平面（歌词就在它下方）
+    this.hideCover = next === 3 || next === 4;
+    if (this.videoMat) {
+      if (next === 4) this.buildVideoGrid(420, 236, 96);          // 小平面 → 采样提高（格子 0.23 单位）+ 点径放大
+
+      else if (prev === 4) { this.buildVideoGrid(800, 450, 430); this.videoAlpha = 1.35; }   // 离开盒子4 → 恢复整屏与亮度
+    }
     if (this.hideCover && this.clearCover) this.clearCover();
     if (next === 2) {
       this.renderer.toneMappingExposure = 1.16;
@@ -1003,7 +966,7 @@ export class VisualEngine {
       this.resetView();
     }
     // 从盒子3 切回来时恢复封面（app 会在换歌/切盒子时重新取封面）
-    if (prev === 3 && !this.hideCover && this.onLeaveCoverless) this.onLeaveCoverless();
+    if ((prev === 3 || prev === 4) && !this.hideCover && this.onLeaveCoverless) this.onLeaveCoverless();
   }
 
   /** 切到某个机位；instant=true 直接到位，否则做 1.1 秒平滑过渡 */
@@ -1128,9 +1091,73 @@ export class VisualEngine {
   /* ---------------------------------------------- MV 平面跟随相机（带惯性）
      直接把平面挂在相机下会显得"贴在屏幕上"很生硬；这里每帧把它朝"相机前方 260
      且朝向相机"的目标位姿推进，并留一点滞后与滚转——转动视角时会被甩出去一点再回正。 */
+  /** 按指定采样分辨率 + 平面宽度重建 MV 粒子网格。
+      盒子4 要把 MV 缩到正中一块平面，采样必须同步降下来——否则同样多的粒子挤进小平面，
+      每单位面积的粒子密度会暴涨（96 宽 vs 430 宽 ≈ 21 倍），画面直接过曝成一块白斑。 */
+  buildVideoGrid(vw, vh, planeW) {
+    const old = this.videoPoints;
+    const wasVisible = old ? old.visible : false;
+    if (old) {
+      // 必须从"实际父节点"移除：相机本身也被 add 进了场景，挂在相机下的对象用
+      // scene.remove() 是删不掉的（会留下一个冻结的旧网格，表现为满屏噪点）
+      if (old.parent) old.parent.remove(old); else this.scene.remove(old);
+      if (old.geometry) old.geometry.dispose();
+    }
+    this.VW = vw; this.VH = vh;
+    if (this.videoCanvas) { this.videoCanvas.width = vw; this.videoCanvas.height = vh; }
+
+    const N = vw * vh;
+    const planeH = planeW * (vh / vw);
+    const pos = new Float32Array(N * 3);
+    const col = new Float32Array(N * 3);   // 每帧刷新
+    const seed = new Float32Array(N);
+    const size = new Float32Array(N);
+    const cellW = planeW / vw;
+    const cellH = planeH / vh;
+    const k = (cellW / 0.5375) * (this.boxMode === 4 ? 1.7 : 1.0);   // 盒子4 的小平面要靠点径重叠才成片
+    for (let y = 0; y < vh; y++) {
+      for (let x = 0; x < vw; x++) {
+        const i = y * vw + x;
+        pos[i * 3] = (x - vw / 2 + 0.5) * cellW + (Math.random() - 0.5) * cellW * 0.7;
+        pos[i * 3 + 1] = -(y - vh / 2 + 0.5) * cellH + (Math.random() - 0.5) * cellH * 0.7;
+        pos[i * 3 + 2] = (Math.random() - 0.5) * 2.5;
+        seed[i] = Math.random();
+        size[i] = (1.75 + Math.random() * 0.7) * k;
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
+    g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
+    g.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
+    // 边缘渐隐：外圈 18% 淡出 → 不会出现一块生硬的"视频方块"
+    this.videoFade = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const px = i % vw, py = Math.floor(i / vw);
+      const nx = Math.abs(px / (vw - 1) * 2 - 1);
+      const ny = Math.abs(py / (vh - 1) * 2 - 1);
+      this.videoFade[i] = 1 - Math.min(1, Math.max(0, (Math.max(nx, ny) - 0.82) / 0.18)) ** 1.5;
+    }
+    this.videoGeo = g;
+    this.videoPoints = new THREE.Points(g, this.videoMat);   // 复用材质：uniforms 全部保留
+    this.videoPoints.frustumCulled = false;
+    this.videoPoints.visible = wasVisible;                   // 换盒子时正在播的 MV 不能被打断
+    this.videoPoints.position.set(0, 0, -260);
+    this.scene.add(this.videoPoints);
+  }
+
   updateVideoFollow(dt) {
     const vp = this.videoPoints;
     if (!vp || !vp.visible) return;
+
+    // 盒子4：MV 就是正中一块固定平面（不跟相机）→ 歌词排在它下方，视角绕着它转
+    if (this.boxMode === 4) {
+      this.videoAlpha = 0.62;          // 粒子更密更大，单颗压低才不过曝（总量≈一块普通屏幕）
+      vp.position.set(0, 0, -2);
+      vp.quaternion.identity();
+      return;
+    }
+
     const cam = this.camera;
 
     // 位置：跟得紧一点，只留很小的滞后（原先 5.0/115 太大，像没跟上）
@@ -1161,6 +1188,7 @@ export class VisualEngine {
       coverPoints: this.coverPoints,
       lyricPoints: this.lyricPoints || 0,
       palette: (this.palette || []).length,
+      pts: this.scene.children.filter(o => o.isPoints && o.geometry).map(o => Math.round(o.geometry.attributes.position.count / 1000) + 'k' + (o.visible ? '' : '隐')).join(' / '),
       mv: !this.videoPoints || !this.videoPoints.visible
         ? '无'
         : this.video.readyState >= 2

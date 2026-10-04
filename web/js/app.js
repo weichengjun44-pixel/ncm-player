@@ -428,7 +428,7 @@ els.panelToggle.addEventListener('click', () => {
 /* ----------------------------------------------------------- 空间盒子切换（1 自由 / 2 电影舞台 / 3 无封面）
    盒子3 = 完全照搬盒子1，只是不要封面（MV 当主体，歌词在其下方） */
 const BOX_KEY = 'ncm.box';
-const BOX_NAMES = { 1: '自由视角', 2: '电影镜头舞台', 3: '无封面（MV 主体）' };
+const BOX_NAMES = { 1: '自由视角', 2: '电影镜头舞台', 3: '无封面（MV 主体）', 4: '无封面 · MV 居中平面' };
 
 // 从"无封面"的盒子3 切回来时，重新把当前歌曲的封面粒子化
 visual.onLeaveCoverless = () => {
@@ -439,7 +439,7 @@ visual.onLeaveCoverless = () => {
 };
 
 function applyBox(n, announce = false) {
-  const mode = (n === 2 || n === 3) ? n : 1;
+  const mode = (n === 2 || n === 3 || n === 4) ? n : 1;
   if (visual.setBox) visual.setBox(mode);
   els.boxToggle.textContent = '盒子 ' + mode;
   els.boxToggle.classList.toggle('active', mode !== 1);
@@ -448,11 +448,11 @@ function applyBox(n, announce = false) {
 }
 els.boxToggle.addEventListener('click', () => {
   const cur = visual.boxMode || 1;
-  applyBox(cur === 1 ? 2 : (cur === 2 ? 3 : 1), true);      // 1 → 2 → 3 → 1 循环
+  applyBox(cur === 1 ? 2 : (cur === 2 ? 3 : (cur === 3 ? 4 : 1)), true);   // 1 → 2 → 3 → 4 → 1
 });
 try {
   const saved = Number(localStorage.getItem(BOX_KEY) || 1);
-  if (saved === 2 || saved === 3) applyBox(saved);
+  if (saved >= 2 && saved <= 4) applyBox(saved);
   else applyBox(1);
 } catch { applyBox(1); }
 
@@ -772,7 +772,7 @@ if (new URLSearchParams(location.search).has('probe')) {
         window.__ncm.visual.videoMat.uniforms.uSwirl.value = Number(q.get('swirl'));
       }
       const wantBox = Number(q.get('box') || 1);
-      if ((wantBox === 2 || wantBox === 3) && window.__ncm.visual.setBox) {
+      if (wantBox >= 2 && wantBox <= 4 && window.__ncm.visual.setBox) {
         window.__ncm.visual.setBox(wantBox);    // 盒子2/3
       }
       if (wantBox !== 2) window.__ncm.visual.dragging = true;   // 非电影镜头：冻结自动慢转，截图可比
@@ -954,7 +954,7 @@ if (new URLSearchParams(location.search).has('debug')) {
   setInterval(() => {
     const d = visual.debugInfo();
     els.dbg.textContent =
-      `封面粒子 ${d.coverPoints} · 歌词粒子 ${d.lyricPoints}\nMV ${d.mv} · 亮度 ${d.mvLum}%(峰值${d.mvLumMax}%) · ${d.mvFrames}帧 · ${d.mvT}s\n${d.fps} fps · 视角 θ=${d.theta} r=${d.radius} · 能量 ${d.level}`;
+      `封面粒子 ${d.coverPoints} · 歌词粒子 ${d.lyricPoints}\n点云 ${d.pts}\nMV ${d.mv} · 亮度 ${d.mvLum}%(峰值${d.mvLumMax}%) · ${d.mvFrames}帧 · ${d.mvT}s\n${d.fps} fps · 视角 θ=${d.theta} r=${d.radius} · 能量 ${d.level}`;
   }, 600);
 }
 
