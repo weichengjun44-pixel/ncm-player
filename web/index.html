@@ -46,14 +46,27 @@
   <div id="loginMask" class="mask">
     <div class="login-card">
       <button id="loginClose" class="ghost close">×</button>
-      <h3>扫码登录网易云</h3>
-      <p class="hint">用手机 <b>网易云音乐 App</b> 扫一下 —— 登录后解锁 <b>无损/高解析度音质</b> 与 <b>VIP 歌曲</b></p>
+      <h3 id="loginTitle">扫码登录网易云</h3>
+      <p class="hint" id="loginHint">用手机 <b>网易云音乐 App</b> 扫一下 —— 登录后解锁 <b>无损/高解析度音质</b> 与 <b>VIP 歌曲</b></p>
       <div class="qr-box" id="qrBox">
         <div class="qr-loading">正在取二维码…</div>
       </div>
       <div id="qrStatus" class="qr-status">等待扫码</div>
       <div id="acctInfo" class="acct-info"></div>
       <button id="logoutBtn" class="pill danger" style="display:none">退出登录</button>
+
+      <!-- QQ / 酷狗：Cookie 导入（这两家的播放入口认 Cookie 里的密钥，扫码那条链还需要它们的混淆签名） -->
+      <div id="authPanel" style="display:none">
+        <p class="hint" id="authHint">
+          在电脑浏览器登录对应网站 →<b>F12 → Application → Cookies</b> → 选中该站点 → 整条复制粘贴到下面
+        </p>
+        <textarea id="authInput" class="auth-input" placeholder="粘贴 Cookie，例如：qqmusic_key=...; uin=o..."></textarea>
+        <div class="auth-row">
+          <button id="authSave" class="pill">保存并校验</button>
+          <button id="authClear" class="pill danger">清除</button>
+        </div>
+        <div id="authMsg" class="qr-status"></div>
+      </div>
     </div>
   </div>
 

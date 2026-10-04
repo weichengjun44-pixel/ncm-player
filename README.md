@@ -208,3 +208,22 @@ MIT
 - `server.js`：`/api/sources`、`/api/search|lyric|playlist/detail?source=` 分流，
   `/stream?source=` 现取现转（QQ/酷狗的直链有时效，不能缓存）
 - 前端：`#srcRow` 三个按钮 + `state.musicSource` + `srcParam()` 拼参数
+
+### QQ / 酷狗 的登录（凭据导入）
+
+播放入口认的是 Cookie 里的密钥（QQ 是 `qqmusic_key`、酷狗是 `token`），拿到后 VIP 曲才取得到流。
+
+面板：切到 QQ/酷狗 后点右上角账号按钮 → 粘贴 Cookie → **保存并校验**。
+
+**校验是真的**：中间层会拿一首 VIP 曲（"晴天"原版）实测取流，取不到就判无效并拒绝保存——
+不会出现"显示登录成功其实还是播不了"的假象。接口 `POST /api/source/auth?source=qq|kugou`，
+凭据存 `.cookie-qq` / `.cookie-kugou`（已进 .gitignore），接口只回显键名不回显值。
+
+**为什么不是扫码**（实测结论，别重复踩）：
+- QQ：扫码链路本身是通的（`ptqrshow` 拿 PNG + `qrsig`，`ptqrtoken = hash33(qrsig)`，
+  轮询返回 `ptuiCB('66',...,'二维码未失效。')`）。但**扫完之后的最后一步**——把 QQ 互联凭证
+  换成 QQ 音乐的播放密钥——需要它前端那段混淆签名（zzc sign），这段没实现，
+  所以只做扫码并不能提高能播率，宁可不做这种"看着能登其实没用"的功能。
+- 酷狗：二维码接口 `login-user.kugou.com/v2/qrcode` 一直返回 `error_code 20010`。
+  公开实现里提到要先 `/register/dev` 注册设备拿 `dfid`（且 mid 要用 uuid 的 md5 转大整数），
+  但该路径现在 404，尝试 6 轮未打通。

@@ -16,13 +16,24 @@ const md5 = (s) => createHash('md5').update(s).digest('hex');
 
 /* ------------------------------------------------------------------ 工具 */
 
-async function req(url, { headers = {}, method = 'GET', body = null, timeout = 12000 } = {}) {
+async function req(url, { headers = {}, method = 'GET', body = null, timeout = 12000, cookie = null } = {}) {
+  const h = { 'User-Agent': UA, ...headers };
+  // 各源可选的登录 Cookie：有就带上（QQ 的播放密钥、酷狗的 token 都在这里）
+  if (cookie) h.Cookie = cookie;
   const r = await fetch(url, {
-    method, body,
-    headers: { 'User-Agent': UA, ...headers },
+    method, body, headers: h,
     signal: AbortSignal.timeout(timeout),
   });
   return r;
+}
+
+/** 每个源的认证 Cookie（登录后由中间层注入；没有就是游客态） */
+const AUTH = { qq: '', kugou: '' };
+function setAuth(source, cookie) {
+  if (source in AUTH) AUTH[source] = String(cookie || '').trim();
+}
+function getAuth(source) {
+  return AUTH[source] || '';
 }
 async function reqJson(url, opts) {
   const r = await req(url, opts);
@@ -86,7 +97,7 @@ const qq = {
   async search(keywords, page = 1, limit = 30) {
     const url = `https://c.y.qq.com/soso/fcgi-bin/client_search_cp?format=json&p=${page}&n=${limit}`
       + `&w=${encodeURIComponent(keywords)}&cr=1&aggr=1&lossless=0&new_json=1`;
-    const { data } = await reqJson(url, { headers: QQ_HEADERS });
+    const { data } = await reqJson(url, { headers: QQ_HEADERS, cookie: AUTH.qq });
     const list = data?.data?.song?.list || [];
     return list.map((s) => ({
       id: s.mid,
@@ -117,8 +128,9 @@ const qq = {
         },
       },
     });
+    const cookie = AUTH.qq;
     const { data } = await reqJson('https://u.y.qq.com/cgi-bin/musicu.fcg', {
-      method: 'POST', body, headers: { ...QQ_HEADERS, 'Content-Type': 'application/json' },
+      method: 'POST', body, headers: { ...QQ_HEADERS, 'Content-Type': 'application/json' }, cookie,
     });
     const d = data?.req?.data;
     const info = (d?.midurlinfo || [])[0];
@@ -135,7 +147,7 @@ const qq = {
   async lyric(mid) {
     const { data } = await reqJson(
       `https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=${mid}&format=json&nobase64=1`,
-      { headers: QQ_HEADERS });
+      { headers: QQ_HEADERS, cookie: AUTH.qq });
     const lrc = data?.lyric || '';
     const tr = data?.trans || '';
     return { lrc, trans: tr, hasTimeTag: /\[\d{1,2}:\d{1,2}/.test(lrc) };
@@ -144,7 +156,7 @@ const qq = {
   /** 排行榜（免登录）：topId 26 = 热歌榜、4 = 飙升榜 */
   async chart(topId = 26, limit = 40) {
     const url = `https://c.y.qq.com/v8/fcg-bin/fcg_v8_toplist_cp.fcg?topid=${topId}&format=json&page=detail&type=top&song_begin=0&song_num=${limit}&tpl=3`;
-    const { data } = await reqJson(url, { headers: QQ_HEADERS });
+    const { data } = await reqJson(url, { headers: QQ_HEADERS, cookie: AUTH.qq });
     const list = data?.songlist || [];
     return list.map((it) => {
       const s = it.data || it;
@@ -189,7 +201,7 @@ const kugou = {
   async search(keywords, page = 1, limit = 30) {
     const url = `https://songsearch.kugou.com/song_search_v2?keyword=${encodeURIComponent(keywords)}`
       + `&page=${page}&pagesize=${limit}&platform=WebFilter&userid=0&clientver=2000`;
-    const { data } = await reqJson(url, { headers: KG_HEADERS });
+    const { data } = await reqJson(url, { headers: KG_HEADERS, cookie: AUTH.kugou || undefined });
     const list = data?.data?.lists || [];
     return list.map((s) => ({
       id: s.FileHash,
@@ -214,7 +226,7 @@ const kugou = {
   async songUrl(hash) {
     const { data } = await reqJson(
       `https://m.kugou.com/app/i/getSongInfo.php?cmd=playInfo&hash=${hash}`,
-      { headers: KG_HEADERS });
+      { headers: KG_HEADERS, cookie: AUTH.kugou || undefined });
     if (!data?.url) {
       const e = new Error(data?.error === '需要付费' ? '这首歌需要付费（酷狗）' : `酷狗取流失败 (${data?.error || data?.status || '未知'})`);
       e.code = data?.error || data?.status;
@@ -227,12 +239,12 @@ const kugou = {
   async lyric(hash, duration = 0) {
     const { data } = await reqJson(
       `https://krcs.kugou.com/search?ver=1&man=yes&client=mobi&keyword=&duration=${duration}&hash=${hash}`,
-      { headers: KG_HEADERS });
+      { headers: KG_HEADERS, cookie: AUTH.kugou || undefined });
     const c = (data?.candidates || [])[0];
     if (!c?.id || !c?.accesskey) return { lrc: '', trans: '', hasTimeTag: false };
     const { data: d2 } = await reqJson(
       `https://lyrics.kugou.com/download?ver=1&client=pc&id=${c.id}&accesskey=${c.accesskey}&fmt=lrc&charset=utf8`,
-      { headers: KG_HEADERS });
+      { headers: KG_HEADERS, cookie: AUTH.kugou || undefined });
     if (!d2?.content) return { lrc: '', trans: '', hasTimeTag: false };
     const lrc = Buffer.from(d2.content, 'base64').toString('utf8');
     return { lrc, trans: '', hasTimeTag: /\[\d{1,2}:\d{1,2}/.test(lrc) };
@@ -242,7 +254,7 @@ const kugou = {
   async chart(rankId = 8888, limit = 40) {
     const { data } = await reqJson(
       `https://m.kugou.com/rank/info/?rankid=${rankId}&page=1&json=true`,
-      { headers: KG_HEADERS });
+      { headers: KG_HEADERS, cookie: AUTH.kugou || undefined });
     const list = data?.songs?.list || data?.data?.info || [];
     return list.slice(0, limit).map((s) => ({
       id: s.hash || s.FileHash,
@@ -266,4 +278,4 @@ const kugou = {
 const PROVIDERS = { qq, kugou };
 const ALL = { netease: { id: 'netease', name: '网易云音乐' }, ...PROVIDERS };
 
-module.exports = { qq, kugou, PROVIDERS, ALL, fmtTime, plainToLrc, md5, req };
+module.exports = { qq, kugou, PROVIDERS, ALL, fmtTime, plainToLrc, md5, req, setAuth, getAuth };

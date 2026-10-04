@@ -19,6 +19,8 @@ const els = {
   tabMine: $('#tabMine'), tabSearch: $('#tabSearch'), panelSub: $('#panelSub'),
   acct: $('#acct'), acctText: $('#acctText'), loginMask: $('#loginMask'), loginClose: $('#loginClose'),
   qrBox: $('#qrBox'), qrStatus: $('#qrStatus'), acctInfo: $('#acctInfo'), logoutBtn: $('#logoutBtn'),
+  loginTitle: $('#loginTitle'), loginHint: $('#loginHint'), authPanel: $('#authPanel'), authInput: $('#authInput'),
+  authSave: $('#authSave'), authClear: $('#authClear'), authMsg: $('#authMsg'), authHint: $('#authHint'),
 };
 
 const LEVELS = [
@@ -561,6 +563,8 @@ function setSource(id) {
   });
   const nm = (SOURCES.find((s) => s.id === id) || {}).name || id;
   toast('已切到 ' + nm);
+  els.acctText.textContent = id === 'netease' ? (state.loggedIn ? '已登录' : '未登录') : (nm + ' 凭据');
+  els.acct.classList.toggle('on', id === 'netease' && !!state.loggedIn);
   // 换源后当前队列的 id 属于旧源，清掉避免误播；面板按当前标签重载
   state.queue = [];
   state.index = -1;
@@ -576,6 +580,11 @@ function setSource(id) {
   try { savedSrc = localStorage.getItem(SRC_KEY) || 'netease'; } catch {}
   if (!SOURCES.some((s) => s.id === savedSrc)) savedSrc = 'netease';
   state.musicSource = savedSrc;
+  if (savedSrc !== 'netease') {
+    const nm = (SOURCES.find((s) => s.id === savedSrc) || {}).name || '';
+    els.acctText.textContent = nm + ' 凭据';
+    els.acct.classList.remove('on');
+  }
   document.querySelectorAll('#srcRow .src-pill').forEach((b) => {
     b.classList.toggle('active', b.dataset.src === savedSrc);
     b.addEventListener('click', () => setSource(b.dataset.src));
@@ -623,14 +632,88 @@ function applyAccount(profile, account) {
   }
 }
 
+/* ------------------------------------------------- QQ / 酷狗 的 Cookie 导入
+   校验是真的：中间层会拿一首 VIP 曲去实测取流，取不到就判无效并拒绝保存。
+   这样不会出现"看着登录成功了其实还是播不了"的假象。 */
+function showQrUI(show) {
+  els.qrBox.style.display = show ? '' : 'none';
+  els.logoutBtn.style.display = 'none';
+}
+
+async function openAuthPanel() {
+  const src = state.musicSource;
+  const nm = (SOURCES.find((s) => s.id === src) || {}).name || src;
+  els.loginTitle.textContent = nm + ' 登录（凭据导入）';
+  showQrUI(false);
+  els.authPanel.style.display = 'block';
+  if (els.loginHint) els.loginHint.style.display = 'none';   // 别让网易云那句提示串到 QQ/酷狗 上
+  if (els.acctInfo) els.acctInfo.style.display = 'none';      // 网易云的账号信息同理
+  els.authInput.value = '';
+  els.authMsg.textContent = '';
+  els.authHint.innerHTML = '在电脑浏览器登录 <b>' + escapeHtml(nm) + '</b> → <b>F12 → Application → Cookies</b> → 选中该站点 → 把整条 Cookie 复制粘贴到下面';
+  try {
+    const st = await api('/source/auth?source=' + src);
+    els.authMsg.textContent = st.set
+      ? '当前：已登录（Cookie ' + st.length + ' 字符，含 ' + (st.keys.join(' / ') || '?') + '）'
+      : '当前：未登录（游客态，原版付费曲取不到流）';
+  } catch (e) {
+    els.authMsg.textContent = '读取状态失败：' + e.message;
+  }
+}
+
+els.authSave.addEventListener('click', async () => {
+  const v = els.authInput.value.trim();
+  if (!v) return toast('先粘贴 Cookie', true);
+  els.authMsg.textContent = '正在校验（会拿一首 VIP 曲实测取流，稍等十几秒）…';
+  els.saveBtnBusy && els.saveBtnBusy(true);
+  try {
+    const r = await fetch('/api/source/auth?source=' + state.musicSource, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cookie: v }),
+    });
+    const j = await r.json();
+    els.authMsg.textContent = (j.ok ? '✓ ' : '✗ ') + (j.msg || '');
+    toast(j.ok ? '登录有效：VIP 曲可播了' : '校验没过，Cookie 可能不完整或已过期', !j.ok);
+    if (j.ok) {
+      els.authInput.value = '';
+      refreshAccount();
+      state.queue = [];      // 换到登录态后重新取流更稳
+    }
+  } catch (e) {
+    els.authMsg.textContent = '请求失败：' + e.message;
+  } finally {
+    els.saveBtnBusy && els.saveBtnBusy(false);
+  }
+});
+
+els.authClear.addEventListener('click', async () => {
+  await fetch('/api/source/auth?source=' + state.musicSource, { method: 'DELETE' });
+  els.authMsg.textContent = '已清除登录凭据，回到游客态';
+  refreshAccount();
+});
+
+function srcLoginLabel() {
+  if (state.musicSource === 'netease') return '未登录';
+  const nm = (SOURCES.find((s) => s.id === state.musicSource) || {}).name || '';
+  return nm + ' 凭据';
+}
+
 function openLogin() {
   els.loginMask.classList.add('show');
+  // QQ / 酷狗：走 Cookie 导入（它们的播放入口认 Cookie 里的密钥；扫码链路还差它们的混淆签名）
+  if (state.musicSource === 'qq' || state.musicSource === 'kugou') return void openAuthPanel();
   if (state.loggedIn) return;      // 已登录：直接展示账号信息
   loadQr();
 }
 
 async function loadQr() {
   clearInterval(qrTimer);
+  els.loginTitle.textContent = '扫码登录网易云';
+  if (els.loginHint) els.loginHint.style.display = '';
+  if (els.acctInfo) els.acctInfo.style.display = '';
+  els.authPanel.style.display = 'none';
+  showQrUI(true);
   els.qrBox.innerHTML = '<div class="qr-loading">正在取二维码…</div>';
   els.qrStatus.className = 'qr-status';
   els.qrStatus.textContent = '等待扫码';
@@ -818,6 +901,7 @@ if (new URLSearchParams(location.search).has('probe')) {
               const items = document.querySelectorAll('#list .item');
               if (items[play - 1]) items[play - 1].click();
             }, 6000);
+            if (q3.get('login')) setTimeout(() => { if (els.acct) els.acct.click(); }, 3400);
           }
   els.dbg.classList.add('show');
   const NL = String.fromCharCode(10);

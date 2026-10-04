@@ -18,7 +18,7 @@ const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
 const { Readable } = require('node:stream');
-const { PROVIDERS } = require('./sources');
+const { PROVIDERS, setAuth, getAuth } = require('./sources');
 
 const PORT = Number(process.env.PORT || 8080);
 const API_BASE = process.env.API_BASE || 'http://127.0.0.1:3000';
@@ -260,6 +260,80 @@ async function pipeMedia(req, res, src, mime, opts) {
 const sourceOf = function (url) {
   return String(url.searchParams.get('source') || 'netease').toLowerCase();
 };
+
+/* ---------------------------------------------- 分音源登录 Cookie（QQ / 酷狗）
+   为什么要单独存：这两家的播放密钥/登录态都在 Cookie 里（QQ 是 qqmusic_key、酷狗是 token），
+   拿到之后 VIP 曲才取得到流。存放位置 D 盘项目根目录、带 source 后缀，且不进 git。 */
+const AUTH_SOURCES = ['qq', 'kugou'];
+const authFile = (src) => path.join(__dirname, '.cookie-' + src);
+
+function loadAuthCookies() {
+  for (const src of AUTH_SOURCES) {
+    try {
+      const c = fs.readFileSync(authFile(src), 'utf8').trim();
+      if (c) { setAuth(src, c); log('已载入 ' + src + ' 登录 Cookie (' + c.length + ' 字符)'); }
+    } catch {}
+  }
+}
+
+/** 用 VIP 曲实测这个 Cookie 到底管不管用 —— 比"保存成功"有意义得多 */
+async function verifyAuth(src) {
+  const prov = PROVIDERS[src];
+  const probe = { qq: { kw: '晴天', label: '晴天(原版)' }, kugou: { kw: '晴天', label: '晴天(原版)' } }[src];
+  const songs = await prov.search(probe.kw, 1, 8);
+  const target = songs.find((x) => src === 'qq' ? x._pay : true) || songs[0];
+  if (!target) return { ok: false, msg: '拿不到测试曲目' };
+  try {
+    const r = await prov.songUrl(target.id);
+    return { ok: true, msg: '有效：VIP 测试曲《' + target.name + '》已可取流', sample: String(r.url).slice(0, 60) };
+  } catch (e) {
+    return { ok: false, msg: '无效：VIP 测试曲《' + target.name + '》仍然取不到（' + e.message + '）' };
+  }
+}
+
+async function handleAuthSource(req, res, url, src) {
+  if (!AUTH_SOURCES.includes(src)) return sendJson(res, 400, { error: '该音源不需要登录 Cookie' });
+  if (req.method === 'GET') {
+    const c = getAuth(src);
+    return sendJson(res, 200, {
+      source: src, set: !!c, length: c.length,
+      // 只回显键名，不回显值——Cookie 等同密码，不该在接口里来回传
+      keys: c ? c.split(';').map((x) => x.split('=')[0].trim()).filter(Boolean) : [],
+    });
+  }
+  if (req.method === 'DELETE') {
+    try { fs.unlinkSync(authFile(src)); } catch {}
+    setAuth(src, '');
+    return sendJson(res, 200, { ok: true, cleared: true });
+  }
+  if (req.method === 'POST') {
+    let body = '';
+    await new Promise((resolve) => {
+      req.on('data', (c) => { body += c; if (body.length > 64 * 1024) req.destroy(); });
+      req.on('end', resolve);
+      req.on('error', resolve);
+    });
+    let cookie = body.trim();
+    try { const j = JSON.parse(body); if (j && typeof j.cookie === 'string') cookie = j.cookie.trim(); } catch {}
+    if (!cookie) return sendJson(res, 400, { ok: false, msg: 'Cookie 是空的' });
+    setAuth(src, cookie);
+    let v;
+    try { v = await verifyAuth(src); } catch (e) { v = { ok: false, msg: '校验出错：' + e.message }; }
+    if (v.ok) {
+      try { fs.writeFileSync(authFile(src), cookie, { mode: 0o600 }); } catch (e) { log('cookie 落盘失败: ' + e.message); }
+      redactLog('[' + src + '] 登录 Cookie 校验通过并已保存');
+    } else {
+      setAuth(src, '');   // 校验不过就不留，避免"看着登录了其实没用"
+      redactLog('[' + src + '] 登录 Cookie 校验失败：' + v.msg);
+    }
+    return sendJson(res, 200, { ok: v.ok, msg: v.msg, source: src, keys: cookie.split(';').map((x) => x.split('=')[0].trim()).filter(Boolean) });
+  }
+  return sendJson(res, 405, { error: 'method not allowed' });
+}
+
+function redactLog(msg) {
+  log(String(msg).replace(/cookie[:=]\s*[^\s]+/gi, 'cookie=***'));
+}
 
 async function handleSource(req, res, url, src) {
   const p = url.pathname;
@@ -516,6 +590,9 @@ const server = http.createServer((req, res) => {
         ],
       });
     }
+    if (p === '/api/source/auth') {
+      return void handleAuthSource(req, res, url, sourceOf(url));
+    }
     // 非网易云的源在中间层直接处理（网易云那套照旧走 3000 端口的 API 服务）
     if (sourceOf(url) !== 'netease'
         && (p === '/api/search' || p === '/api/lyric' || p === '/api/playlist/detail')) {
@@ -539,6 +616,8 @@ const server = http.createServer((req, res) => {
 server.on('clientError', (err, socket) => {
   try { socket.end('HTTP/1.1 400 Bad Request\r\n\r\n'); } catch {}
 });
+
+loadAuthCookies();
 
 server.listen(PORT, () => {
   log(`粒子播放器已启动:  http://localhost:${PORT}`);

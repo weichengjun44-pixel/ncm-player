@@ -415,3 +415,25 @@ button.ghost:hover { color: var(--accent); border-color: rgba(255, 196, 107, 0.4
   border-color: rgba(143, 233, 255, .42);
   box-shadow: 0 0 12px rgba(143, 233, 255, .12) inset;
 }
+
+
+/* ---------- QQ / 酷狗 的 Cookie 导入 ---------- */
+.auth-input {
+  width: 100%;
+  min-height: 92px;
+  margin: 8px 0 10px;
+  padding: 9px 11px;
+  color: var(--foreground, #e8e8ec);
+  background: rgba(255, 255, 255, .045);
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 8px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+}
+.auth-input:focus { border-color: rgba(143, 233, 255, .45); }
+.auth-input::placeholder { color: rgba(255, 255, 255, .28); }
+.auth-row { display: flex; gap: 8px; margin-top: 2px; }
+.auth-row .pill { flex: 1; }
