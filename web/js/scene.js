@@ -151,7 +151,8 @@ const FRAG_COVER = /* glsl */ `
     // 飘出去的粒子褪色成暖白 → 看起来就是"扩散进浮尘里的物质"
     vec3 col = mix(vColor, vec3(1.0, 0.93, 0.84), clamp(vAway * 1.6, 0.0, 1.0));
     float fade = 1.0 - clamp(vAway, 0.0, 1.0) * 0.55;
-    gl_FragColor = vec4(col * (0.60 + uLevel * 0.28), m * vAlpha * fade * (0.052 + 0.072 * clamp(uMorph,0.0,1.0) + uLevel * 0.06));
+    // 粒子数翻倍 → 单颗亮度略降防过曝，但总量仍约 ×1.7（用户要求封面更亮更清晰）
+    gl_FragColor = vec4(col * (0.66 + uLevel * 0.28), m * vAlpha * fade * (0.044 + 0.061 * clamp(uMorph,0.0,1.0) + uLevel * 0.06));
   }
 `;
 
@@ -464,8 +465,8 @@ export class VisualEngine {
       this.video.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none;z-index:-1';
       document.body.appendChild(this.video);
 
-      this.VW = 800;                       // 采样分辨率（16:9）—— 格子再细一档（0.64 → 0.54 单位）
-      this.VH = 450;
+      this.VW = 1280;                      // 采样分辨率（16:9）—— 格子 0.336 单位 ≈ 1 CSS px
+      this.VH = 720;                       // 即"屏幕像素级"：HD 源能吃到真实细节，SD 源是平滑放大
       this.videoCanvas = document.createElement('canvas');
       this.videoCanvas.width = this.VW;
       this.videoCanvas.height = this.VH;
@@ -479,7 +480,8 @@ export class VisualEngine {
       this.buildVideoGrid(this.VW, this.VH, 430);
       this.videoLast = 0;
       this.videoUrl = null;
-      this.videoAlpha = 1.35;              // MV 亮度系数（用户要求"更亮、清晰可见"；封面正后另有 88% 减光保护封面）
+      this.videoAlpha = 1.8;               // MV 亮度系数（用户要求"亮度也拉高"。点粒子用普通混合，
+                                           // 粒子变细不会自己变亮，所以要显式加）
     }
 
     // ---- 后期 ----
@@ -897,7 +899,7 @@ export class VisualEngine {
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 }, uBass: { value: 0 }, uMid: { value: 0 }, uTreble: { value: 0 },
-        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 0.62 },
+        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 0.44 },   // 采样 640→900，点径等比缩（覆盖率不变）
         uHalfW: { value: COVER_W * 0.5 }, uEntropy: { value: 1.0 },
       },
       vertexShader: VERT_COVER,
@@ -953,6 +955,7 @@ export class VisualEngine {
       this.shotIndex = 0;
       this.cutToShot(0, true);
       this.dragging = false;
+      if (this.videoPoints) this.videoPoints.visible = false;   // 盒子2：只留封面
       this.lastDrag = -99;                 // 允许立即接管
     } else {
       this.renderer.toneMappingExposure = 1.05;
@@ -960,6 +963,8 @@ export class VisualEngine {
       if (this.bloom) { this.bloom.strength = 0.46; this.bloom.threshold = 0.52; }
       this.resetView();
     }
+    // 离开盒子2 → 恢复 MV（有 URL 就该显示）
+    if (prev === 2 && next !== 2 && this.videoPoints) this.videoPoints.visible = !!this.videoUrl;
     // 从盒子3 切回来时恢复封面（app 会在换歌/切盒子时重新取封面）
     if (prev === 3 && !this.hideCover && this.onLeaveCoverless) this.onLeaveCoverless();
   }
@@ -1053,6 +1058,7 @@ export class VisualEngine {
 
   /** 每帧把 MV 画面采成粒子颜色（限频 30fps，避免 CPU 白烧） */
   updateVideoParticles() {
+    if (this.boxMode === 2) return;            // 盒子2 不播 MV（省掉每帧的像素采样）
     if (!this.video || !this.videoPoints.visible) return;
     if (this.video.readyState < 2) return;
     if (this.time - this.videoLast < 1 / 30) return;
@@ -1143,7 +1149,11 @@ export class VisualEngine {
 
   updateVideoFollow(dt) {
     const vp = this.videoPoints;
-    if (!vp || !vp.visible) return;
+    if (!vp) return;
+
+    // 盒子2：电影镜头舞台只保留封面（用户要求删掉 MV）
+    if (this.boxMode === 2) { vp.visible = false; return; }
+    if (!vp.visible) return;
 
     const cam = this.camera;
 

@@ -172,11 +172,14 @@ function playIndex(i) {
   els.artist.textContent = song.artists.join(' / ') + (song.album ? ' · ' + song.album : '');
   els.cover.classList.remove('ok');
   if (song.cover) {
-    const proxied = '/cover?url=' + encodeURIComponent(song.cover);
+    // 封面原图多半是 300x300 的缩略图 → 采样再高也是糊的。网易云 picUrl 支持 ?param=WxH，
+    // 这里统一要 1024 的源，采样到 900 才能吃到真实细节（清晰度的真正瓶颈在源分辨率）。
+    const coverSrc = String(song.cover || '').replace(/\?.*$/, '') + '?param=1024y1024';
+    const proxied = '/cover?url=' + encodeURIComponent(coverSrc);
     els.cover.src = proxied;
     els.cover.onload = () => els.cover.classList.add('ok');
     // 封面 → 粒子：同源代理后取像素，采样成上万颗粒子
-    visual.setCoverToParticles(proxied).catch((e) => console.warn('封面粒子化失败', e));
+    visual.setCoverToParticles(proxied, { width: 900 }).catch((e) => console.warn('封面粒子化失败', e));
   } else {
     visual.clearCover();
   }
@@ -433,7 +436,8 @@ const BOX_NAMES = { 1: '自由视角', 2: '电影镜头舞台', 3: '无封面（
 // 从"无封面"的盒子3 切回来时，重新把当前歌曲的封面粒子化
 visual.onLeaveCoverless = () => {
   if (state.current && state.current.cover) {
-    visual.setCoverToParticles('/cover?url=' + encodeURIComponent(state.current.cover))
+    const src = String(state.current.cover).replace(/\?.*$/, '') + '?param=1024y1024';
+    visual.setCoverToParticles('/cover?url=' + encodeURIComponent(src), { width: 900 })
       .catch((e) => console.warn('封面粒子化失败', e));
   }
 };
