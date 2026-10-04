@@ -132,6 +132,60 @@ const AUDIO_MIME = {
   ape: 'audio/x-ape',
 };
 
+/** 取 MV 真实地址（带登录 cookie 才有高清/VIP 的 MV） */
+async function resolveMv(id) {
+  const r = await fetch(withCookie(`${API_BASE}/mv/url?id=${encodeURIComponent(id)}&r=1080`));
+  const j = await r.json();
+  return (j && j.data && j.data.url) || null;
+}
+
+/** 转发 MV 视频流：必须同源，否则前端 canvas 取像素会被污染（做不出视频粒子） */
+async function proxyMv(req, res, url) {
+  const id = url.searchParams.get('id');
+  if (!id) return send(res, 400, 'missing id');
+  let src;
+  try {
+    src = await resolveMv(id);
+  } catch (err) {
+    return send(res, 502, 'mv resolve failed: ' + err.message);
+  }
+  if (!src) return send(res, 404, 'no mv url');
+
+  const headers = {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36',
+    Referer: 'https://music.163.com/',
+    Accept: '*/*',
+  };
+  if (req.headers.range) headers.Range = req.headers.range;
+
+  try {
+    const upstream = await fetch(src, { headers, redirect: 'follow' });
+    if (!upstream.ok && upstream.status !== 206) return send(res, 502, 'mv source ' + upstream.status);
+    const ct = (upstream.headers.get('content-type') || '').toLowerCase();
+    const out = {
+      'Content-Type': ct.includes('mp4') || ct.includes('video') ? 'video/mp4' : 'application/octet-stream',
+      'Accept-Ranges': 'bytes',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-store',
+    };
+    const len = upstream.headers.get('content-length');
+    const range = upstream.headers.get('content-range');
+    if (len) out['Content-Length'] = len;
+    if (range) out['Content-Range'] = range;
+    res.writeHead(upstream.status === 206 ? 206 : 200, out);
+    Readable.fromWeb(upstream.body).pipe(res);
+    res.on('close', () => {
+      try {
+        if (upstream.body && !upstream.body.locked) upstream.body.cancel().catch(() => {});
+      } catch {}
+    });
+  } catch (err) {
+    log('MV 转发失败:', err.message);
+    if (!res.headersSent) send(res, 502, 'mv failed: ' + err.message);
+  }
+}
+
 /** 把远端音频流按 Range 转发给浏览器（带上网易云要求的 Referer） */
 async function proxyStream(req, res, url) {
   const id = url.searchParams.get('id');
@@ -354,6 +408,7 @@ const server = http.createServer((req, res) => {
     }
     if (p.startsWith('/api/')) return void proxyApi(req, res, url);
     if (p === '/stream') return void proxyStream(req, res, url);
+    if (p === '/mv') return void proxyMv(req, res, url);
     if (p === '/cover') return void proxyCover(req, res, url);
     return serveStatic(req, res, url);
   } catch (err) {

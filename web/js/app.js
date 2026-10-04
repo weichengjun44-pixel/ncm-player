@@ -194,6 +194,7 @@ function playIndex(i) {
 
   loadLyrics(song.id);
   updateMediaSession(song);
+  loadMv(song.id);              // 有 MV 就挂到封面后面当粒子背景
 }
 
 function updatePlayIcon() {
@@ -202,6 +203,7 @@ function updatePlayIcon() {
   els.icoPause.style.display = playing ? 'block' : 'none';
   els.coverBox.classList.toggle('spin', playing);
   visual.setPlaying(playing);
+  visual.setVideoPlaying(playing);      // MV 粒子幕跟音频一起播/停
 }
 
 function nextAuto(dir = 1) {
@@ -235,6 +237,28 @@ function updateMediaSession(song) {
     navigator.mediaSession.setActionHandler('play', () => audio.play());
     navigator.mediaSession.setActionHandler('pause', () => audio.pause());
   } catch {}
+}
+
+/* ----------------------------------------------------------- MV（视频粒子背景） */
+let mvNoticeShown = false;
+
+async function loadMv(songId) {
+  if (!visual.detachVideo) return;
+  visual.detachVideo();
+  try {
+    const d = await api(`/song/detail?ids=${songId}`);
+    const mvid = d?.songs?.[0]?.mv;
+    if (!mvid) return;                                   // 这首歌没有 MV
+    const u = await api(`/mv/url?id=${mvid}&r=1080`);
+    if (!u?.data?.url) return;                           // 取不到地址（VIP/版权/地区）
+    visual.attachVideo(`/mv?id=${mvid}`);                // 同源转发流 → 粒子幕
+    if (!mvNoticeShown) {
+      mvNoticeShown = true;
+      toast('这首歌有 MV：正在封面后面用粒子播放（拖动画面能看到它）');
+    }
+  } catch {
+    /* 没有 MV 是常态，静默处理 */
+  }
 }
 
 /* ----------------------------------------------------------- 歌词 */
@@ -619,7 +643,7 @@ if (new URLSearchParams(location.search).has('debug')) {
   setInterval(() => {
     const d = visual.debugInfo();
     els.dbg.textContent =
-      `封面粒子 ${d.coverPoints} · 歌词粒子 ${d.lyricPoints}\n色组 ${d.palette} 色 · ${d.fps} fps\n视角 θ=${d.theta} r=${d.radius} · 能量 ${d.level}`;
+      `封面粒子 ${d.coverPoints} · 歌词粒子 ${d.lyricPoints}\nMV 粒子幕 ${d.mv} · 色组 ${d.palette} 色\n${d.fps} fps · 视角 θ=${d.theta} r=${d.radius} · 能量 ${d.level}`;
   }, 600);
 }
 

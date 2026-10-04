@@ -401,6 +401,60 @@ export class VisualEngine {
       this.ripples.push({ pts, mat, life: 0, max: 1.6, power: 0 });
     }
 
+    // ---- MV 视频粒子：每颗粒子实时读 MV 画面的像素颜色（默认隐藏）----
+    {
+      this.video = document.createElement('video');
+      this.video.muted = true;
+      this.video.loop = true;
+      this.video.playsInline = true;
+      this.video.preload = 'auto';
+      this.video.crossOrigin = 'anonymous';
+      this.video.style.cssText = 'position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
+      document.body.appendChild(this.video);
+
+      this.VW = 128;                       // 采样分辨率（16:9）
+      this.VH = 72;
+      this.videoCanvas = document.createElement('canvas');
+      this.videoCanvas.width = this.VW;
+      this.videoCanvas.height = this.VH;
+      this.videoCtx = this.videoCanvas.getContext('2d', { willReadFrequently: true });
+
+      const N = this.VW * this.VH;
+      const planeW = 210;                  // 比封面大得多 → 四周都看得见
+      const planeH = planeW * (this.VH / this.VW);
+      const pos = new Float32Array(N * 3);
+      const col = new Float32Array(N * 3);   // 每帧刷新
+      const seed = new Float32Array(N);
+      const size = new Float32Array(N);
+      const cellW = planeW / this.VW;
+      const cellH = planeH / this.VH;
+      for (let y = 0; y < this.VH; y++) {
+        for (let x = 0; x < this.VW; x++) {
+          const i = y * this.VW + x;
+          pos[i * 3] = (x - this.VW / 2 + 0.5) * cellW + (Math.random() - 0.5) * cellW * 0.7;
+          pos[i * 3 + 1] = -(y - this.VH / 2 + 0.5) * cellH + (Math.random() - 0.5) * cellH * 0.7;
+          pos[i * 3 + 2] = (Math.random() - 0.5) * 2.5;
+          seed[i] = Math.random();
+          size[i] = 1.0 + Math.random() * 1.4;
+        }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      g.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
+      g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
+      g.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
+      this.videoGeo = g;
+      this.videoMat = pointsMaterial({ uSwirl: { value: 0.004 }, uExpand: { value: 0.06 } });
+      this.videoMat.uniforms.uPixel.value = dpr;
+      this.videoPoints = new THREE.Points(g, this.videoMat);
+      this.videoPoints.frustumCulled = false;
+      this.videoPoints.visible = false;
+      this.videoPoints.position.set(0, 0, -78);      // 藏在封面后面
+      this.scene.add(this.videoPoints);
+      this.videoLast = 0;
+      this.videoUrl = null;
+    }
+
     // ---- 后期 ----
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
@@ -837,11 +891,71 @@ export class VisualEngine {
     }
   }
 
+  /* ---------------------------------------------------------- MV 视频 → 粒子 */
+  /** 挂一支 MV（同源 /mv?id=... 流），用它实时驱动背后的粒子幕 */
+  attachVideo(url) {
+    if (!this.video) return;
+    if (this.videoUrl === url && this.videoPoints.visible) return;
+    this.videoUrl = url;
+    this.videoPoints.visible = true;
+    this.video.src = url;
+    this.video.play().catch(() => {});
+  }
+
+  detachVideo() {
+    if (!this.video) return;
+    this.videoUrl = null;
+    this.videoPoints.visible = false;
+    try {
+      this.video.pause();
+      this.video.removeAttribute('src');
+      this.video.load();
+    } catch {}
+  }
+
+  setVideoPlaying(v) {
+    if (!this.video || !this.videoPoints.visible) return;
+    try {
+      if (v) this.video.play().catch(() => {});
+      else this.video.pause();
+    } catch {}
+  }
+
+  /** 每帧把 MV 画面采成粒子颜色（限频 30fps，避免 CPU 白烧） */
+  updateVideoParticles() {
+    if (!this.video || !this.videoPoints.visible) return;
+    if (this.video.readyState < 2) return;
+    if (this.time - this.videoLast < 1 / 30) return;
+    this.videoLast = this.time;
+    const { VW, VH } = this;
+    try {
+      this.videoCtx.drawImage(this.video, 0, 0, VW, VH);
+      const d = this.videoCtx.getImageData(0, 0, VW, VH).data;
+      const col = this.videoGeo.attributes.aColor.array;
+      const N = VW * VH;
+      for (let i = 0; i < N; i++) {
+        const o = i * 4;
+        col[i * 3] = (d[o] / 255) * 0.48;
+        col[i * 3 + 1] = (d[o + 1] / 255) * 0.48;
+        col[i * 3 + 2] = (d[o + 2] / 255) * 0.48;
+      }
+      this.videoGeo.attributes.aColor.needsUpdate = true;
+    } catch (e) {
+      console.warn('[scene] MV 取样失败，关闭视频粒子:', e.message);
+      this.detachVideo();
+    }
+  }
+
   debugInfo() {
     return {
       coverPoints: this.coverPoints,
       lyricPoints: this.lyricPoints || 0,
       palette: (this.palette || []).length,
+      mv: !this.videoPoints || !this.videoPoints.visible
+        ? '无'
+        : this.video.readyState >= 2
+          ? '播放中 ' + this.video.videoWidth + 'x' + this.video.videoHeight
+          : '加载中',
       fps: Math.round(this.fps),
       theta: +this.view.theta.toFixed(2),
       radius: Math.round(this.view.radius),
@@ -905,7 +1019,15 @@ export class VisualEngine {
       }
     }
 
-    for (const m of [this.starMat, this.wallMat, this.dustMat]) {
+    // MV 粒子幕：取样 + 随低频轻微呼吸
+    this.updateVideoParticles();
+    if (this.videoPoints && this.videoPoints.visible) {
+      this.videoMat.uniforms.uLevel.value = 0.30 + level * 0.45;
+      this.videoPoints.rotation.z = Math.sin(this.time * 0.05) * 0.02;
+      this.videoPoints.scale.setScalar(1 + bass * 0.03);
+    }
+
+    for (const m of [this.starMat, this.wallMat, this.dustMat, this.videoMat]) {
       m.uniforms.uTime.value = this.time;
       m.uniforms.uBass.value = bass;
       m.uniforms.uMid.value = mid;

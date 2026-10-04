@@ -211,9 +211,9 @@ button.ghost:hover { color: var(--accent); border-color: rgba(255, 196, 107, 0.4
 .dbg {
   position: fixed; z-index: 45; left: 22px; bottom: 152px;
   display: none; font-family: ui-monospace, Consolas, monospace; font-size: 11px;
-  color: #ffd9a0; background: rgba(12, 9, 16, 0.74); border: 1px solid var(--line);
-  padding: 6px 10px; border-radius: 10px; line-height: 1.6; backdrop-filter: blur(8px);
-  white-space: pre;
+  color: #ffd9a0; background: none; border: none;
+  padding: 0; line-height: 1.6;
+  white-space: pre; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9);
 }
 .dbg.show { display: block; }
 
@@ -298,14 +298,17 @@ button.ghost:hover { color: var(--accent); border-color: rgba(255, 196, 107, 0.4
 
 /* ---------------- 提示条 ---------------- */
 .toast {
-  position: fixed; z-index: 50; left: 50%; bottom: 132px; transform: translate(-50%, 14px);
-  background: var(--glass-2); border: 1px solid var(--line);
-  backdrop-filter: blur(var(--blur));
-  padding: 9px 18px; border-radius: 999px; font-size: 12.5px; color: var(--fg);
-  opacity: 0; pointer-events: none; transition: all 0.3s; box-shadow: var(--shadow);
-  max-width: 70vw; text-align: center;
+  /* 挪到顶部并去掉深色底：它原来正好压在"下一句歌词"上，看着就是个黑框 */
+  position: fixed; z-index: 50; left: 50%; top: 74px; transform: translate(-50%, -10px);
+  background: none; border: none; backdrop-filter: none;
+  padding: 0; border-radius: 0; font-size: 12.5px;
+  color: var(--accent);
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.95), 0 0 18px rgba(0, 0, 0, 0.8);
+  opacity: 0; pointer-events: none; transition: all 0.3s;
+  max-width: 70vw; text-align: center; letter-spacing: 0.04em;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.warn { color: var(--accent-3); }
 .toast.warn { border-color: rgba(255, 122, 198, 0.5); color: #ffd9ee; }
 
 /* 脚本错误兜底条 */

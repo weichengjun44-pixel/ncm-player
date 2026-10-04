@@ -67,6 +67,37 @@ cd .. && node server.js
 | GET | `/api/login/status` | 当前登录态 `{ok, logged, profile, account}` |
 | GET | `/api/logout` | 退出登录（删本地 cookie） |
 
+
+## MV 粒子背景
+
+放歌时会自动查这首歌有没有 MV（`/song/detail` 的 `mv` 字段），有就取地址并在**封面后方**用粒子播放：
+
+- 视频经 `/mv?id=` **同源转发**（关键：跨域视频画到 canvas 会被污染，`getImageData` 直接抛 SecurityError，视频粒子就做不出来）
+- 每颗粒子实时读 MV 画面的像素颜色：视频先缩到 **128×72** 再取样，对应 **9216 颗粒子**，限频 30fps（CPU 开销约 1ms/帧）
+- 粒子幕放在 `z = -78`、宽 210（远大于封面 74），所以**四周都看得见**；用叠加混合，封面暗部会让 MV 透出来
+- 热歌榜 60 首里约 30 首带 MV；没有 MV 或取不到地址（VIP/版权/地区限制）时静默不显示
+
+接口：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/mv/url?id=<mvid>` | 取 MV 真实地址（带登录 cookie） |
+| GET | `/mv?id=<mvid>` | **同源转发视频流**（支持 Range，`video/mp4`） |
+
+## 服务看护
+
+第三方网易云 API 服务会偶发崩溃（实测崩过一次，播放器会整个失联），所以带一个看护：
+
+```
+services/run-api.cmd    起 API 服务（3000），日志 → logs/api.log
+services/run-web.cmd    起中间层（8080），日志 → logs/web.log
+services/watchdog.ps1   每 15 秒检查 3000/8080，掉了自动拉起 → logs/watchdog.log
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File services\watchdog.ps1
+```
+
 ## 操作
 
 | 操作 | 说明 |
