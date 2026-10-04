@@ -467,7 +467,7 @@ export class VisualEngine {
       this.scene.add(this.videoPoints);
       this.videoLast = 0;
       this.videoUrl = null;
-      this.videoAlpha = 0.75;              // MV 亮度系数（用户要求再提一点；0.2 看不见 / 0.45 可见 / 0.7 偏压封面）
+      this.videoAlpha = 1.05;              // MV 亮度系数（用户要求更亮；中央有 50% 减光保护封面，可以给足）
     }
 
     // ---- 后期 ----
