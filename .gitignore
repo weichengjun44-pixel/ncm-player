@@ -19,3 +19,7 @@ desktop/.cache/
 desktop/build/*.png
 .tunnel-url
 logs/
+
+# 安卓构建产物与本地签名密钥（密钥要留着，否则以后无法覆盖升级同一个 App）
+android/build/
+*.keystore

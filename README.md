@@ -458,3 +458,40 @@ ebula\services\server-watchdog.ps1`，
   SSH 会话自身的进程也被匹配到并被杀掉，导致后续命令根本没执行。杀进程的过滤条件要避免匹配到自己。
 - **`Set-Content -Encoding UTF8` 会写 BOM**：生成的 .tunnel-url 带 BOM → 二维码里编进一个不可见字符
   → 扫出来打不开。读取时用 `utf-8-sig`。
+
+## 安卓版（APK）
+
+`android/` 目录，产物 `android/build/NEBULA.apk`（约 30KB）。
+
+### 为什么是"瘦客户端 + 可改服务器地址"
+
+后端跑不到手机上（网易云要 weapi/eapi 加密、QQ/酷狗要服务端直连中转），所以 App 就是一个
+专用 WebView，指向你自己的服务器。**因为 Cloudflare 快速隧道每次重启地址都会变**，
+所以地址必须能在应用内改：首次启动会弹设置框，之后**长按画面任意位置**随时修改，记在本地。
+
+### 构建：刻意不用 Gradle
+
+Gradle 本体 + Android 的 maven 依赖在国内网络下拉起来非常痛苦。而 APK 构建本质就五步，
+SDK 的 build-tools 里全都有：`aapt2 编译资源 → aapt2 链接 base.apk → javac → d8 转 dex →
+装进 apk`，再 `zipalign` + `apksigner`。`android/build.sh` 把这条路走通，**全程零网络依赖**。
+
+```bash
+bash android/setup-toolchain.sh   # 装 JDK17 + Android SDK（build-tools 34 / platform 34）到 D 盘
+bash android/build.sh             # 出 android/build/NEBULA.apk
+```
+
+工具链位置：`D:\Apps\jdk17`、`D:\Appsndroid-sdk`（都按用户要求装 D 盘）。
+
+### 构建踩的坑
+
+- **`resources.arsc` 必须保持 STORED（不压缩）且对齐**（API 30+ 硬要求）。用 Python 往 APK 里塞
+  classes.dex 时如果按 ZIP_DEFLATED 重写所有条目，会破坏这一点导致装不上 —— 必须沿用每个条目原本的
+  `compress_type`。
+- **javac / d8 是 Windows 原生程序，读不了 MSYS 的 `/d/...` 路径**。源文件列表必须用 `pwd -W` 的写法。
+- **不要把报错重定向到 /dev/null 或用 grep 过滤**：这轮因此白折腾一次（javac 失败但被 `|| true` 吞掉，
+  最后表现为 d8 "没产出 dex"，看不出真实原因）。
+- **JDK 下载**：清华镜像里文件名是 `...17.0.20.1_1.zip`，用错版本号会 404；`aka.ms` / 北外镜像不通，
+  中科大/南大的路径结构与清华不同。
+- 判断"APK 能不能装"要验四件事：`apksigner verify`（签名）、`aapt2 dump badging` 里有
+  `launchable-activity`（否则装了点不开）、`resources.arsc` 是 STORED、以及**从公网下载回来做 sha256 比对**
+  （截断的安装包是最坑的失败方式）。
