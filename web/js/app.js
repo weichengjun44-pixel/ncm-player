@@ -650,7 +650,20 @@ async function openAuthPanel() {
   if (els.acctInfo) els.acctInfo.style.display = 'none';      // 网易云的账号信息同理
   els.authInput.value = '';
   els.authMsg.textContent = '';
-  els.authHint.innerHTML = '在电脑浏览器登录 <b>' + escapeHtml(nm) + '</b> → <b>F12 → Application → Cookies</b> → 选中该站点 → 把整条 Cookie 复制粘贴到下面';
+  const guide = {
+    qq: '① 浏览器登录 <b>y.qq.com</b>（要能看到自己歌单，才算真登录）<br/>'
+      + '② <b>F12 → Application → Cookies → https://y.qq.com</b><br/>'
+      + '③ 找到 <b>qqmusic_key</b>（有时叫 qm_keyst）—— 选中整个表格多行按 <b>Ctrl+C</b> 复制，或右键 <b>Copy all as JSON</b><br/>'
+      + '④ 粘到下面，点保存（会拿一首 VIP 曲实测）',
+    kugou: '① 浏览器登录 <b>www.kugou.com</b><br/>'
+      + '② <b>F12 → Application → Cookies → https://www.kugou.com</b><br/>'
+      + '③ 找到 <b>token</b>（还有 userid）—— 选中整个表格多行按 <b>Ctrl+C</b>，或右键 <b>Copy all as JSON</b><br/>'
+      + '④ 粘到下面，点保存（会拿一首 VIP 曲实测）',
+  };
+  els.authHint.innerHTML = guide[src] || '';
+  els.authInput.placeholder = src === 'qq'
+    ? 'qqmusic_key=...; uin=o...; skey=...   （制表符/JSON/多行 都能直接粘）'
+    : 'token=...; userid=...   （制表符/JSON/多行 都能直接粘）';
   try {
     const st = await api('/source/auth?source=' + src);
     els.authMsg.textContent = st.set
@@ -678,7 +691,16 @@ els.authSave.addEventListener('click', async () => {
     if (j.ok) {
       els.authInput.value = '';
       refreshAccount();
-      state.queue = [];      // 换到登录态后重新取流更稳
+      // 立刻用新凭据重载当前这首：能马上听出"原来播不了，现在能播了"
+      if (state.current) {
+        setTimeout(() => {
+          try {
+            audio.src = `/stream?id=${state.current.id}&level=${LEVELS[state.level].k}${srcParam(state.current.source)}`;
+            audio.play().catch(() => {});
+            toast('已用新凭据重新取流');
+          } catch {}
+        }, 400);
+      }
     }
   } catch (e) {
     els.authMsg.textContent = '请求失败：' + e.message;

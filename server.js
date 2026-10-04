@@ -265,6 +265,43 @@ const sourceOf = function (url) {
    为什么要单独存：这两家的播放密钥/登录态都在 Cookie 里（QQ 是 qqmusic_key、酷狗是 token），
    拿到之后 VIP 曲才取得到流。存放位置 D 盘项目根目录、带 source 后缀，且不进 git。 */
 const AUTH_SOURCES = ['qq', 'kugou'];
+
+/** 粘贴容错：DevTools 里能复制出来的几种形态都吃下，别让人因为多了个换行/引号而反复失败 */
+function normalizeCookie(raw) {
+  let s = String(raw || '').trim();
+  if (!s) return '';
+  s = s.replace(/^cookie\s*:\s*/i, '');            // 整行 "Cookie: a=b; c=d"
+  s = s.replace(/^["'`]+|[\s*"'`]+$/g, '');        // 外层引号/反引号
+  if (/^[[{]/.test(s)) {                           // JSON（DevTools 复制为 JSON / 扩展导出）
+    try {
+      const j = JSON.parse(s);
+      if (Array.isArray(j)) {
+        s = j.filter((x) => x && x.name).map((x) => x.name + '=' + x.value).join('; ');
+      } else if (j && typeof j === 'object') {
+        s = Object.entries(j).map(([k, v]) => k + '=' + (typeof v === 'object' ? JSON.stringify(v) : v)).join('; ');
+      }
+    } catch {}
+  }
+  // DevTools 里选中 Cookie 表格多行 Ctrl+C 出来是制表符分隔：name<TAB>value<TAB>domain...
+  // 这一步不处理的话会拼成一条畸形的超长 Cookie，让人以为"粘贴没生效"
+  if (/\t/.test(s)) {
+    const pairs = [];
+    for (const line of s.split(/[\r\n]+/)) {
+      const parts = line.split('\t');
+      if (parts.length >= 2 && parts[0].trim()) pairs.push(parts[0].trim() + '=' + parts[1].trim());
+    }
+    if (pairs.length) s = pairs.join('; ');
+  }
+  s = s.replace(/[\r\n]+/g, '; ');                 // 多行 → 单行
+  s = s.split(';').map((x) => x.trim()).filter(Boolean).join('; ');
+  return s;
+}
+
+/** 各源真正管用的键（用于判断"这段 Cookie 里有没有播放入口要的东西"） */
+const AUTH_KEYS = {
+  qq: ['qqmusic_key', 'qm_keyst', 'uin', 'skey', 'p_skey'],
+  kugou: ['token', 'userid', 'user_id', 'vip_type', 'kg_mid', 'dfid'],
+};
 const authFile = (src) => path.join(__dirname, '.cookie-' + src);
 
 function loadAuthCookies() {
@@ -314,8 +351,24 @@ async function handleAuthSource(req, res, url, src) {
       req.on('error', resolve);
     });
     let cookie = body.trim();
-    try { const j = JSON.parse(body); if (j && typeof j.cookie === 'string') cookie = j.cookie.trim(); } catch {}
+    try { const j = JSON.parse(body); if (j && typeof j.cookie === 'string') cookie = j.cookie; } catch {}
+    cookie = normalizeCookie(cookie);
     if (!cookie) return sendJson(res, 400, { ok: false, msg: 'Cookie 是空的' });
+    const keys = cookie.split(';').map((x) => x.split('=')[0].trim()).filter(Boolean);
+    const want = AUTH_KEYS[src] || [];
+    const hit = want.filter((k) => keys.includes(k));
+    if (src === 'qq' && !keys.includes('qqmusic_key') && !keys.includes('qm_keyst')) {
+      return sendJson(res, 200, {
+        ok: false, source: src, keys,
+        msg: '这段 Cookie 里没有 qqmusic_key（QQ 音乐的播放密钥），可能是从 qq.com 而不是 y.qq.com 复制的，或者没登录成功',
+      });
+    }
+    if (src === 'kugou' && !keys.includes('token')) {
+      return sendJson(res, 200, {
+        ok: false, source: src, keys,
+        msg: '这段 Cookie 里没有 token（酷狗的登录凭证），请在已登录的 www.kugou.com 上复制',
+      });
+    }
     setAuth(src, cookie);
     let v;
     try { v = await verifyAuth(src); } catch (e) { v = { ok: false, msg: '校验出错：' + e.message }; }
@@ -326,7 +379,7 @@ async function handleAuthSource(req, res, url, src) {
       setAuth(src, '');   // 校验不过就不留，避免"看着登录了其实没用"
       redactLog('[' + src + '] 登录 Cookie 校验失败：' + v.msg);
     }
-    return sendJson(res, 200, { ok: v.ok, msg: v.msg, source: src, keys: cookie.split(';').map((x) => x.split('=')[0].trim()).filter(Boolean) });
+    return sendJson(res, 200, { ok: v.ok, msg: v.msg, source: src, keys, matched: hit });
   }
   return sendJson(res, 405, { error: 'method not allowed' });
 }

@@ -211,6 +211,21 @@ MIT
 
 ### QQ / 酷狗 的登录（凭据导入）
 
+**怎么拿**（每家 30 秒）：
+
+| | QQ 音乐 | 酷狗 |
+|---|---|---|
+| ① 登录站点 | `y.qq.com`（能看到自己歌单才算真登录）| `www.kugou.com` |
+| ② 打开 | `F12 → Application → Cookies → 选中该站点` | 同左 |
+| ③ 关键键 | **`qqmusic_key`**（有时叫 `qm_keyst`）+ `uin` | **`token`** + `userid` |
+| ④ 复制 | 选中整个表格多行 `Ctrl+C`，或右键 `Copy all as JSON` | 同左 |
+
+粘贴什么形态都行：单行、`Cookie: ...` 整行、多行、JSON 数组、DevTools 表格复制（制表符）、带外层引号
+—— 都实测通过。缺关键键时会直说原因（"没有 qqmusic_key，可能从 qq.com 复制的"）。
+
+原来的段落：
+
+
 播放入口认的是 Cookie 里的密钥（QQ 是 `qqmusic_key`、酷狗是 `token`），拿到后 VIP 曲才取得到流。
 
 面板：切到 QQ/酷狗 后点右上角账号按钮 → 粘贴 Cookie → **保存并校验**。
