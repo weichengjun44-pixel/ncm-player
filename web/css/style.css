@@ -2,18 +2,18 @@
    NEBULA · 粒子音乐空间 —— 玻璃拟态 + 深空底色
    ============================================================ */
 :root {
-  --bg: #04050c;
-  --fg: #eaf2ff;
-  --dim: #8ea0c4;
-  --dim2: #5d6b8c;
-  --line: rgba(150, 190, 255, 0.14);
-  --glass: rgba(12, 18, 38, 0.42);
-  --glass-2: rgba(10, 16, 32, 0.62);
-  --accent: #6ee7ff;
-  --accent-2: #a78bfa;
+  --bg: #000000;
+  --fg: #f5eee1;
+  --dim: #a89e91;
+  --dim2: #6f665b;
+  --line: rgba(232, 214, 186, 0.14);
+  --glass: rgba(16, 13, 20, 0.44);
+  --glass-2: rgba(12, 10, 16, 0.66);
+  --accent: #ffc46b;
+  --accent-2: #c86bff;
   --accent-3: #ff7ac6;
   --radius: 16px;
-  --shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+  --shadow: 0 18px 60px rgba(0, 0, 0, 0.72);
   --blur: 22px;
 }
 
@@ -23,7 +23,7 @@ html, body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  background: radial-gradient(120% 90% at 50% 0%, #101a3a 0%, #05070f 45%, #02030a 100%);
+  background: radial-gradient(120% 95% at 50% 8%, #0b0712 0%, #040307 45%, #000000 100%);
   color: var(--fg);
   font-family: "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", -apple-system,
     BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -44,8 +44,8 @@ html, body {
 .boot p { color: var(--dim); letter-spacing: 0.18em; font-size: 13px; margin: 0; }
 .boot-orb {
   width: 74px; height: 74px; border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #bff6ff, var(--accent) 40%, var(--accent-2) 75%, transparent 78%);
-  box-shadow: 0 0 70px rgba(110, 231, 255, 0.55), 0 0 160px rgba(167, 139, 250, 0.35);
+  background: radial-gradient(circle at 35% 30%, #fff0d0, var(--accent) 40%, var(--accent-2) 75%, transparent 78%);
+  box-shadow: 0 0 70px rgba(255, 196, 107, 0.55), 0 0 160px rgba(200, 107, 255, 0.35);
   animation: breathe 2.6s ease-in-out infinite;
 }
 @keyframes breathe {
@@ -69,7 +69,7 @@ html, body {
 .brand .dot {
   width: 9px; height: 9px; border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 14px var(--accent), 0 0 34px rgba(110, 231, 255, 0.6);
+  box-shadow: 0 0 14px var(--accent), 0 0 34px rgba(255, 196, 107, 0.6);
   animation: breathe 2.4s ease-in-out infinite;
 }
 .brand b { font-weight: 700; font-size: 15px; }
@@ -83,7 +83,7 @@ html, body {
   box-shadow: var(--shadow);
   transition: border-color 0.25s, transform 0.25s;
 }
-.search:focus-within { border-color: rgba(110, 231, 255, 0.5); transform: translateY(-1px); }
+.search:focus-within { border-color: rgba(255, 196, 107, 0.5); transform: translateY(-1px); }
 .search input {
   background: none; border: 0; outline: none; color: var(--fg);
   width: min(38vw, 340px); font-size: 14px; letter-spacing: 0.02em;
@@ -93,10 +93,10 @@ html, body {
 .search button {
   display: grid; place-items: center;
   width: 34px; height: 34px; border-radius: 50%;
-  border: 1px solid var(--line); background: rgba(110, 231, 255, 0.08);
+  border: 1px solid var(--line); background: rgba(255, 196, 107, 0.08);
   color: var(--accent); cursor: pointer; transition: all 0.2s;
 }
-.search button:hover { background: rgba(110, 231, 255, 0.2); box-shadow: 0 0 22px rgba(110, 231, 255, 0.35); }
+.search button:hover { background: rgba(255, 196, 107, 0.2); box-shadow: 0 0 22px rgba(255, 196, 107, 0.35); }
 
 /* ---------------- 左侧列表 ---------------- */
 .panel {
@@ -123,11 +123,11 @@ button.ghost {
   border: 1px solid var(--line); background: none; color: var(--dim);
   width: 24px; height: 24px; border-radius: 50%; cursor: pointer; line-height: 1;
 }
-button.ghost:hover { color: var(--accent); border-color: rgba(110, 231, 255, 0.45); }
+button.ghost:hover { color: var(--accent); border-color: rgba(255, 196, 107, 0.45); }
 
 .list { flex: 1; overflow-y: auto; padding: 8px; scrollbar-width: thin; }
 .list::-webkit-scrollbar { width: 6px; }
-.list::-webkit-scrollbar-thumb { background: rgba(140, 180, 255, 0.22); border-radius: 3px; }
+.list::-webkit-scrollbar-thumb { background: rgba(232, 214, 186, 0.22); border-radius: 3px; }
 
 .item {
   display: flex; align-items: center; gap: 10px;
@@ -135,10 +135,10 @@ button.ghost:hover { color: var(--accent); border-color: rgba(110, 231, 255, 0.4
   border: 1px solid transparent;
   transition: background 0.18s, border-color 0.18s, transform 0.18s;
 }
-.item:hover { background: rgba(120, 170, 255, 0.09); border-color: rgba(140, 180, 255, 0.18); }
+.item:hover { background: rgba(255, 210, 150, 0.09); border-color: rgba(232, 214, 186, 0.18); }
 .item.active {
-  background: linear-gradient(90deg, rgba(110, 231, 255, 0.16), rgba(167, 139, 250, 0.10));
-  border-color: rgba(110, 231, 255, 0.42);
+  background: linear-gradient(90deg, rgba(255, 196, 107, 0.16), rgba(200, 107, 255, 0.10));
+  border-color: rgba(255, 196, 107, 0.42);
 }
 .item .idx { width: 22px; text-align: right; color: var(--dim2); font-size: 12px; font-variant-numeric: tabular-nums; }
 .item.active .idx { color: var(--accent); }
@@ -146,7 +146,7 @@ button.ghost:hover { color: var(--accent); border-color: rgba(110, 231, 255, 0.4
 .item .n { font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .item .a { font-size: 11.5px; color: var(--dim2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
 .item .badge {
-  font-size: 10px; color: var(--accent-2); border: 1px solid rgba(167, 139, 250, 0.35);
+  font-size: 10px; color: var(--accent-2); border: 1px solid rgba(200, 107, 255, 0.35);
   padding: 1px 5px; border-radius: 999px; flex: none;
 }
 .list .empty { color: var(--dim2); font-size: 12.5px; text-align: center; padding: 28px 10px; line-height: 1.9; }
@@ -169,7 +169,7 @@ button.ghost:hover { color: var(--accent); border-color: rgba(110, 231, 255, 0.4
 }
 .lrc-prev {
   font-size: clamp(11px, 1.05vw, 13.5px);
-  color: rgba(190, 210, 245, 0.42);
+  color: rgba(226, 214, 196, 0.42);
   line-height: 1.7; letter-spacing: 0.02em;
   height: 1.7em; overflow: hidden;
 }
@@ -177,7 +177,7 @@ button.ghost:hover { color: var(--accent); border-color: rgba(110, 231, 255, 0.4
   font-size: clamp(22px, 2.9vw, 38px);
   font-weight: 750; letter-spacing: 0.01em; line-height: 1.42;
   color: #ffffff;
-  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.85), 0 0 26px rgba(110, 231, 255, 0.55), 0 0 60px rgba(167, 139, 250, 0.3);
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.85), 0 0 26px rgba(255, 196, 107, 0.55), 0 0 60px rgba(200, 107, 255, 0.3);
   margin: 6px 0 4px;
   transition: opacity 0.28s ease, transform 0.28s ease;
   opacity: 0;
@@ -185,7 +185,7 @@ button.ghost:hover { color: var(--accent); border-color: rgba(110, 231, 255, 0.4
 .lrc-now.show { opacity: 1; }
 .lrc-next {
   font-size: clamp(12.5px, 1.35vw, 16px);
-  color: rgba(210, 228, 255, 0.58);
+  color: rgba(226, 214, 196, 0.58);
   line-height: 1.75; letter-spacing: 0.02em;
   text-shadow: 0 1px 12px rgba(0, 0, 0, 0.8);
   opacity: 0; transition: opacity 0.35s;
@@ -201,7 +201,7 @@ button.ghost:hover { color: var(--accent); border-color: rgba(110, 231, 255, 0.4
   cursor: pointer; transition: all 0.2s;
 }
 .tab:hover { color: var(--dim); }
-.tab.active { color: var(--accent); border-color: rgba(110, 231, 255, 0.4); background: rgba(110, 231, 255, 0.08); }
+.tab.active { color: var(--accent); border-color: rgba(255, 196, 107, 0.4); background: rgba(255, 196, 107, 0.08); }
 .panel-sub {
   padding: 0 16px 8px; font-size: 11px; color: var(--dim2); letter-spacing: 0.06em;
   border-bottom: 1px solid var(--line);
@@ -212,7 +212,7 @@ button.ghost:hover { color: var(--accent); border-color: rgba(110, 231, 255, 0.4
 .dbg {
   position: fixed; z-index: 45; left: 22px; bottom: 152px;
   display: none; font-family: ui-monospace, Consolas, monospace; font-size: 11px;
-  color: #9fe8ff; background: rgba(6, 10, 22, 0.72); border: 1px solid var(--line);
+  color: #ffd9a0; background: rgba(12, 9, 16, 0.74); border: 1px solid var(--line);
   padding: 6px 10px; border-radius: 10px; line-height: 1.6; backdrop-filter: blur(8px);
   white-space: pre;
 }
@@ -230,9 +230,9 @@ button.ghost:hover { color: var(--accent); border-color: rgba(110, 231, 255, 0.4
 .now { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .cover {
   width: 58px; height: 58px; border-radius: 14px; flex: none;
-  background: linear-gradient(135deg, #16233f, #0b1122);
+  background: linear-gradient(135deg, #1b1620, #0b080d);
   border: 1px solid var(--line); overflow: hidden;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 0 30px rgba(110, 231, 255, 0.08);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 0 30px rgba(255, 196, 107, 0.08);
   position: relative;
 }
 .cover::after {
@@ -256,27 +256,27 @@ button.ghost:hover { color: var(--accent); border-color: rgba(110, 231, 255, 0.4
   backdrop-filter: blur(var(--blur)); cursor: pointer;
   transition: all 0.2s;
 }
-.ctl:hover { color: var(--accent); border-color: rgba(110, 231, 255, 0.45); box-shadow: 0 0 26px rgba(110, 231, 255, 0.28); }
+.ctl:hover { color: var(--accent); border-color: rgba(255, 196, 107, 0.45); box-shadow: 0 0 26px rgba(255, 196, 107, 0.28); }
 .ctl.main {
   width: 54px; height: 54px;
-  background: linear-gradient(135deg, rgba(110, 231, 255, 0.22), rgba(167, 139, 250, 0.2));
-  border-color: rgba(110, 231, 255, 0.5);
-  box-shadow: 0 0 34px rgba(110, 231, 255, 0.32);
+  background: linear-gradient(135deg, rgba(255, 196, 107, 0.22), rgba(200, 107, 255, 0.2));
+  border-color: rgba(255, 196, 107, 0.5);
+  box-shadow: 0 0 34px rgba(255, 196, 107, 0.32);
 }
 .ctl.main:hover { transform: scale(1.05); }
 
 .bar-row { display: flex; align-items: center; gap: 12px; width: 100%; }
 .time { font-size: 11px; color: var(--dim2); font-variant-numeric: tabular-nums; width: 38px; text-align: center; }
 .bar { position: relative; flex: 1; height: 20px; display: flex; align-items: center; cursor: pointer; }
-.bar-bg { position: absolute; left: 0; right: 0; height: 3px; border-radius: 3px; background: rgba(150, 190, 255, 0.16); }
+.bar-bg { position: absolute; left: 0; right: 0; height: 3px; border-radius: 3px; background: rgba(232, 214, 186, 0.16); }
 .fill {
   position: absolute; left: 0; height: 3px; width: 0%; border-radius: 3px;
   background: linear-gradient(90deg, var(--accent), var(--accent-2));
-  box-shadow: 0 0 14px rgba(110, 231, 255, 0.6);
+  box-shadow: 0 0 14px rgba(255, 196, 107, 0.6);
 }
 .knob {
   position: absolute; left: 0; width: 11px; height: 11px; border-radius: 50%;
-  background: #fff; box-shadow: 0 0 16px rgba(110, 231, 255, 0.9);
+  background: #fff; box-shadow: 0 0 16px rgba(255, 196, 107, 0.9);
   transform: translateX(-50%) scale(0); transition: transform 0.18s;
 }
 .bar:hover .knob { transform: translateX(-50%) scale(1); }
@@ -295,7 +295,7 @@ button.ghost:hover { color: var(--accent); border-color: rgba(110, 231, 255, 0.4
   padding: 5px 11px; border-radius: 999px; cursor: pointer;
   backdrop-filter: blur(var(--blur)); transition: all 0.2s;
 }
-.pill:hover { color: var(--accent); border-color: rgba(110, 231, 255, 0.45); }
+.pill:hover { color: var(--accent); border-color: rgba(255, 196, 107, 0.45); }
 
 /* ---------------- 提示条 ---------------- */
 .toast {
@@ -328,8 +328,8 @@ button.ghost:hover { color: var(--accent); border-color: rgba(110, 231, 255, 0.4
   backdrop-filter: blur(var(--blur)); box-shadow: var(--shadow);
   transition: all 0.25s;
 }
-.acct:hover { color: var(--fg); border-color: rgba(110, 231, 255, 0.45); }
-.acct.on { color: var(--fg); border-color: rgba(110, 231, 255, 0.4); }
+.acct:hover { color: var(--fg); border-color: rgba(255, 196, 107, 0.45); }
+.acct.on { color: var(--fg); border-color: rgba(255, 196, 107, 0.4); }
 .acct .acct-dot {
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--dim2); transition: all 0.3s;
@@ -365,10 +365,10 @@ button.ghost:hover { color: var(--accent); border-color: rgba(110, 231, 255, 0.4
   width: 208px; height: 208px; margin: 0 auto;
   display: grid; place-items: center;
   background: #fff; border-radius: 14px; padding: 10px;
-  box-shadow: 0 0 40px rgba(110, 231, 255, 0.25);
+  box-shadow: 0 0 40px rgba(255, 196, 107, 0.25);
 }
 .qr-box img { width: 100%; height: 100%; display: block; }
-.qr-loading { color: #334; font-size: 12px; }
+.qr-loading { color: #3a3128; font-size: 12px; }
 .qr-status { margin-top: 14px; font-size: 12.5px; color: var(--dim); letter-spacing: 0.05em; }
 .qr-status.ok { color: #67e8a0; }
 .qr-status.bad { color: var(--accent-3); }

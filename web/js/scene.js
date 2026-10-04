@@ -18,16 +18,17 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const BANDS = 128;
-const BOX = 96;                 // 盒子半边长（再次放大 → 空间更辽阔）
+const BOX = 110;                 // 盒子半边长（再次放大 → 空间更辽阔）
 const COVER_W = 56;             // 封面粒子平面宽度
 const LYRIC_W = 64;             // 歌词粒子平面宽度
-const CYAN = new THREE.Color('#6ee7ff');
-const VIOLET = new THREE.Color('#a78bfa');
-const PINK = new THREE.Color('#ff7ac6');
-const WHITE = new THREE.Color('#eaf2ff');
+const IVORY = new THREE.Color('#fff3e2');    // 星尘主色：暖白（不是冷白）
+const AMBER = new THREE.Color('#ffb35c');    // 琥珀：暖色点缀
+const ROSE = new THREE.Color('#ff6fae');     // 玫红
+const MAGENTA = new THREE.Color('#c86bff');  // 品红偏紫（替代原来的蓝紫）
+const BLACK = new THREE.Color('#000000');
 
 /** 备用色组：从封面提不出颜色时用它（都是中低亮度的彩色，刻意避开纯白） */
-const FALLBACK_PALETTE = ['#6ee7ff', '#a78bfa', '#ff7ac6', '#4f8cff', '#f7b267', '#63e6be'].map((h) => new THREE.Color(h));
+const FALLBACK_PALETTE = ['#ffb35c', '#ff6fae', '#c86bff', '#ffe7bd', '#ff8f6b'].map((h) => new THREE.Color(h));
 
 /* ------------------------------------------------------------ 贴图工具 */
 function glowTexture(inner = 'rgba(255,255,255,1)') {
@@ -202,7 +203,7 @@ export class VisualEngine {
     this._fpsAcc = 0;
     this._fpsN = 0;
 
-    this.view = { theta: 0.5, phi: 1.25, radius: 178, vTheta: 0, vPhi: 0 };
+    this.view = { theta: 0.5, phi: 1.25, radius: 200, vTheta: 0, vPhi: 0 };
     this.dragging = false;
     this.lastDrag = 0;
     this.pointer = new THREE.Vector2();
@@ -221,12 +222,12 @@ export class VisualEngine {
     this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setClearColor(0x04050c, 1);
+    this.renderer.setClearColor(0x000000, 1);   // 纯黑底：宇宙不是蓝的
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.12;
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2(0x04050c, 0.0036);
+    this.scene.fog = new THREE.FogExp2(0x000000, 0.0052);   // 更浓的雾 → 更深的纵深
     this.camera = new THREE.PerspectiveCamera(56, window.innerWidth / window.innerHeight, 0.1, 4000);
 
     // ---- 深空星场（三层景深：近/中/远，转动时视差明显）----
@@ -245,7 +246,7 @@ export class VisualEngine {
         pos[i * 3] = r * Math.sin(ph) * Math.cos(th);
         pos[i * 3 + 1] = r * Math.cos(ph) * 0.6;
         pos[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
-        c.copy(CYAN).lerp(VIOLET, Math.random() * 0.8).lerp(WHITE, Math.random() * 0.12);
+        c.copy(IVORY).lerp(AMBER, Math.random() * 0.5).lerp(MAGENTA, Math.random() * 0.18);
         // 近的稍亮、远的更暗 —— 天然的纵深明暗层次
         const dim = band < 3 ? 1.0 : band < 6 ? 0.72 : 0.5;
         col[i * 3] = c.r * 0.85 * dim; col[i * 3 + 1] = c.g * 0.85 * dim; col[i * 3 + 2] = c.b * 0.85 * dim;
@@ -281,7 +282,7 @@ export class VisualEngine {
         else if (face === 3) { pos[i * 3 + 1] = -s + inset; pos[i * 3] = a; pos[i * 3 + 2] = b; }
         else if (face === 4) { pos[i * 3 + 2] = s - inset; pos[i * 3] = a; pos[i * 3 + 1] = b; }
         else { pos[i * 3 + 2] = -s + inset; pos[i * 3] = a; pos[i * 3 + 1] = b; }
-        c.copy(CYAN).lerp(VIOLET, Math.random());
+        c.copy(IVORY).lerp(MAGENTA, Math.random() * 0.3).lerp(AMBER, Math.random() * 0.25);
         col[i * 3] = c.r * 0.5; col[i * 3 + 1] = c.g * 0.5; col[i * 3 + 2] = c.b * 0.5;
         seed[i] = Math.random();
         size[i] = 1.0 + Math.random() * 2.0;
@@ -301,7 +302,7 @@ export class VisualEngine {
 
     // ---- 盒内体积浮尘：填满内部空间，转动时视差最强，是"空间延伸感"的主力 ----
     {
-      const N = 11000;
+      const N = 22000;
       const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
       const seed = new Float32Array(N), size = new Float32Array(N);
       const c = new THREE.Color();
@@ -311,7 +312,7 @@ export class VisualEngine {
         pos[i * 3] = r * Math.sin(ph) * Math.cos(th);
         pos[i * 3 + 1] = r * Math.cos(ph) * 0.78;
         pos[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
-        c.copy(CYAN).lerp(VIOLET, Math.random()).lerp(PINK, Math.random() * 0.22);
+        c.copy(IVORY).lerp(AMBER, Math.random() * 0.45).lerp(MAGENTA, Math.random() * 0.22);
         const near = 1 - r / (BOX * 1.05);                       // 越靠中心越亮 → 中心像"核"
         const dim = 0.22 + near * 0.55;
         col[i * 3] = c.r * dim; col[i * 3 + 1] = c.g * dim; col[i * 3 + 2] = c.b * dim;
@@ -331,7 +332,7 @@ export class VisualEngine {
 
     // ---- 核心光团（用色组里的颜色，不用纯白）----
     this.core = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: glowTexture(), color: 0x5fbfe6, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }),
+      new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffd9a8, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }),
     );
     this.core.scale.setScalar(18);
     this.scene.add(this.core);
@@ -343,7 +344,7 @@ export class VisualEngine {
       const seed = new Float32Array(N), size = new Float32Array(N);
       for (let i = 0; i < N; i++) {
         const b = Math.floor(i / 4);
-        const c = new THREE.Color().setHSL((0.5 + (b / BANDS) * 0.45) % 1, 0.85, 0.62);
+        const c = new THREE.Color().setHSL((0.80 + (b / BANDS) * 0.40) % 1, 0.82, 0.60);
         col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
         seed[i] = Math.random();
         size[i] = 1.5 + (i % 4) * 0.5;
@@ -373,7 +374,7 @@ export class VisualEngine {
         pos[i * 3] = Math.cos(a);
         pos[i * 3 + 1] = (Math.random() - 0.5) * 0.3;
         pos[i * 3 + 2] = Math.sin(a);
-        c.copy(CYAN).lerp(PINK, Math.random());
+        c.copy(AMBER).lerp(ROSE, Math.random());
         col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
         seed[i] = Math.random();
         size[i] = 1.5 + Math.random() * 2.4;
@@ -430,13 +431,13 @@ export class VisualEngine {
     });
     el.addEventListener('wheel', (e) => {
       e.preventDefault();
-      this.view.radius = Math.max(110, Math.min(460, this.view.radius + e.deltaY * 0.12));
+      this.view.radius = Math.max(120, Math.min(520, this.view.radius + e.deltaY * 0.12));
     }, { passive: false });
     el.addEventListener('dblclick', () => this.resetView());
   }
 
   resetView() {
-    this.view.theta = 0.5; this.view.phi = 1.25; this.view.radius = 178;
+    this.view.theta = 0.5; this.view.phi = 1.25; this.view.radius = 200;
     this.view.vTheta = 0; this.view.vPhi = 0;
   }
 
@@ -712,7 +713,7 @@ export class VisualEngine {
 
   /* ---------------------------------------------------------- 封面 → 粒子 */
   /** 把专辑封面采样成粒子云；换歌时从远处飞回来重组（morph 0→1） */
-  async setCoverToParticles(url, { width = 196 } = {}) {
+  async setCoverToParticles(url, { width = 224 } = {}) {
     if (!url) { this.clearCover(); return; }
     let img;
     try {
@@ -745,7 +746,7 @@ export class VisualEngine {
     // ---- 色组：从封面里提取调色板，再把粒子颜色重映射进去 ----
     const palette = this.derivePalette(data, W, H);
     this.palette = palette;
-    if (palette[0]) this.core.material.color.copy(palette[0]).lerp(new THREE.Color('#9fe8ff'), 0.35);
+    if (palette[0]) this.core.material.color.copy(palette[0]).lerp(new THREE.Color('#ffe8c4'), 0.35);
 
     const homes = [], scatters = [], colors = [], seeds = [];
     const planeW = COVER_W;
@@ -787,7 +788,7 @@ export class VisualEngine {
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 }, uBass: { value: 0 }, uMid: { value: 0 }, uTreble: { value: 0 },
-        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 1.05 },
+        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 0.95 },
       },
       vertexShader: VERT_COVER,
       fragmentShader: FRAG_COVER,
