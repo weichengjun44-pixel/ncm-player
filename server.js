@@ -51,6 +51,30 @@ function log(...a) {
 process.on('uncaughtException', (err) => log('!! uncaughtException:', err && err.stack ? err.stack.split('\n')[0] : err));
 process.on('unhandledRejection', (err) => log('!! unhandledRejection:', err && err.stack ? err.stack.split('\n')[0] : err));
 
+/* ------------------------------------------------------------------
+   登录凭据（MUSIC_U cookie）
+   存本地文件、不进 git、日志里一律脱敏；只在服务端与网易云之间使用。
+   ------------------------------------------------------------------ */
+const COOKIE_FILE = path.join(__dirname, '.cookie');
+const readCookie = () => { try { return fs.readFileSync(COOKIE_FILE, 'utf8').trim(); } catch { return ''; } };
+const writeCookie = (c) => { try { fs.writeFileSync(COOKIE_FILE, String(c).trim(), { mode: 0o600 }); } catch (e) { log('cookie 保存失败:', e.message); } };
+const dropCookie = () => { try { fs.unlinkSync(COOKIE_FILE); } catch {} };
+
+/** 给 API 请求带上已登录的 cookie（除非调用方自己传了） */
+function withCookie(pathQ) {
+  const c = readCookie();
+  if (!c || /[?&]cookie=/.test(pathQ)) return pathQ;
+  return pathQ + (pathQ.includes('?') ? '&' : '?') + 'cookie=' + encodeURIComponent(c);
+}
+
+/** 日志脱敏：cookie=xxx 一律替换成 cookie=*** */
+const redact = (s) => String(s).replace(/cookie=[^&\s]*/gi, 'cookie=***');
+
+async function apiGet(pathQ) {
+  const r = await fetch(API_BASE + withCookie(pathQ), { headers: { accept: 'application/json' } });
+  return r.json();
+}
+
 function send(res, code, body, headers = {}) {
   const buf = Buffer.isBuffer(body) ? body : Buffer.from(String(body));
   res.writeHead(code, { 'Content-Length': buf.length, ...headers });
@@ -64,9 +88,9 @@ function sendJson(res, code, obj) {
   });
 }
 
-/** 转发 /api/* 到网易云 API 服务 */
+/** 转发 /api/* 到网易云 API 服务（自动带登录 cookie） */
 async function proxyApi(req, res, url) {
-  const target = API_BASE + url.pathname.replace(/^\/api/, '') + (url.search || '');
+  const target = API_BASE + withCookie(url.pathname.replace(/^\/api/, '') + (url.search || ''));
   try {
     const upstream = await fetch(target, {
       method: req.method,
@@ -80,15 +104,15 @@ async function proxyApi(req, res, url) {
     });
     res.end(text);
   } catch (err) {
-    log('API 代理失败:', target, err.message);
+    log('API 代理失败:', redact(target), err.message);
     sendJson(res, 502, { ok: false, error: '网易云 API 服务不可达: ' + err.message });
   }
 }
 
-/** 取歌曲真实播放地址（走 API 服务） */
+/** 取歌曲真实播放地址（走 API 服务，带登录 cookie 才有高音质/VIP） */
 async function resolveSongUrl(id, level = 'exhigh') {
   const target = `${API_BASE}/song/url/v1?id=${encodeURIComponent(id)}&level=${level}`;
-  const r = await fetch(target);
+  const r = await fetch(withCookie(target));
   const j = await r.json();
   const item = Array.isArray(j.data) ? j.data[0] : null;
   return item && item.url ? item.url : null;
@@ -220,6 +244,63 @@ function serveVendor(req, res, url) {
   });
 }
 
+/* ------------------------------------------------------------------
+   扫码登录接口
+   /api/login/qr        取二维码（返回 key + base64 图）
+   /api/login/qr/check  轮询扫码结果；成功则保存 cookie 并返回账号信息
+   /api/login/status    当前登录状态（昵称 / VIP / 音质等级）
+   /api/logout          退出登录（删本地 cookie）
+   ------------------------------------------------------------------ */
+async function handleAuth(req, res, url, p) {
+  try {
+    if (p === '/api/login/qr') {
+      const keyJ = await apiGet('/login/qr/key?timestamp=' + Date.now());
+      const key = keyJ && keyJ.data && keyJ.data.unikey;
+      if (!key) return sendJson(res, 502, { ok: false, error: '拿不到二维码 key（API 服务在跑吗？）' });
+      const qrJ = await apiGet(`/login/qr/create?key=${encodeURIComponent(key)}&qrimg=true&timestamp=${Date.now()}`);
+      const d = (qrJ && qrJ.data) || {};
+      return sendJson(res, 200, { ok: true, key, img: d.qrimg || '', url: d.qrurl || '' });
+    }
+
+    if (p === '/api/login/qr/check') {
+      const key = url.searchParams.get('key');
+      if (!key) return sendJson(res, 400, { ok: false, error: 'missing key' });
+      const j = await apiGet(`/login/qr/check?key=${encodeURIComponent(key)}&timestamp=${Date.now()}`);
+      // 800 二维码过期 / 801 等待扫码 / 802 待确认 / 803 授权成功
+      if (j.code === 803) {
+        if (j.cookie) writeCookie(j.cookie);
+        const st = await apiGet('/login/status?timestamp=' + Date.now());
+        const d = (st && st.data) || {};
+        log('登录成功:', (d.profile && d.profile.nickname) || '(未知用户)');
+        return sendJson(res, 200, { ok: true, code: 803, profile: d.profile || null, account: d.account || null });
+      }
+      return sendJson(res, 200, { ok: true, code: j.code, message: j.message || '' });
+    }
+
+    if (p === '/api/login/status') {
+      if (!readCookie()) return sendJson(res, 200, { ok: true, logged: false });
+      const st = await apiGet('/login/status?timestamp=' + Date.now());
+      const d = (st && st.data) || {};
+      const profile = d.profile || null;
+      return sendJson(res, 200, {
+        ok: true,
+        logged: !!(profile && profile.userId),
+        profile,
+        account: d.account || null,
+      });
+    }
+
+    if (p === '/api/logout') {
+      dropCookie();
+      log('已退出登录（本地 cookie 已删除）');
+      return sendJson(res, 200, { ok: true });
+    }
+  } catch (err) {
+    log('登录接口异常:', err.message);
+    if (!res.headersSent) return sendJson(res, 502, { ok: false, error: err.message });
+  }
+}
+
 fs.mkdirSync(path.join(__dirname, 'logs'), { recursive: true });
 
 const server = http.createServer((req, res) => {
@@ -231,6 +312,7 @@ const server = http.createServer((req, res) => {
       return sendJson(res, 200, { ok: true, api: API_BASE, port: PORT });
     }
     if (p.startsWith('/vendor/three/')) return serveVendor(req, res, url);
+    if (p.startsWith('/api/login/') || p === '/api/logout') return void handleAuth(req, res, url, p);
     if (p.startsWith('/api/')) return void proxyApi(req, res, url);
     if (p === '/stream') return void proxyStream(req, res, url);
     if (p === '/cover') return void proxyCover(req, res, url);

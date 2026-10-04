@@ -50,6 +50,24 @@ cd .. && node server.js
 
 改端口：`PORT=9000 node server.js`；指向别的 API 服务：`API_BASE=http://127.0.0.1:4000 node server.js`。
 
+## 扫码登录（解锁 VIP / 无损音质）
+
+点页面右上角 **未登录** → 手机**网易云音乐 App** 扫码 → 登录成功。
+
+登录后：`无损` / `高解析度` 音质可选（VIP 账号只有登录后才有）、VIP/版权歌曲可播放、显示昵称与 VIP 标识。
+
+**凭据怎么处理的**：登录 cookie 只存在服务端本地文件 `.cookie`（已在 `.gitignore` 里），
+前端拿不到、不进聊天记录、不进仓库；日志里一律脱敏成 `cookie=***`。退出登录会删除该文件。
+
+### 登录相关接口（都挂在 :8080 上，前端只跟自己的端口说话）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/login/qr` | 取二维码，返回 `{ok, key, img(base64 PNG), url}` |
+| GET | `/api/login/qr/check?key=` | 轮询扫码结果：`800` 过期 / `801` 待扫码 / `802` 待确认 / `803` 成功（成功后服务端保存 cookie 并返回账号信息） |
+| GET | `/api/login/status` | 当前登录态 `{ok, logged, profile, account}` |
+| GET | `/api/logout` | 退出登录（删本地 cookie） |
+
 ## 操作
 
 | 操作 | 说明 |

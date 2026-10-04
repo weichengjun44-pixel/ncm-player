@@ -15,13 +15,16 @@ const els = {
   prev: $('#prev'), next: $('#next'), bar: $('#bar'), fill: $('#fill'), knob: $('#knob'),
   cur: $('#cur'), dur: $('#dur'), vol: $('#vol'), mode: $('#mode'), level: $('#level'),
   vis: $('#vis'), toast: $('#toast'), lrcNow: $('#lyricNow'), lrcNext: $('#lyricNext'),
+  acct: $('#acct'), acctText: $('#acctText'), loginMask: $('#loginMask'), loginClose: $('#loginClose'),
+  qrBox: $('#qrBox'), qrStatus: $('#qrStatus'), acctInfo: $('#acctInfo'), logoutBtn: $('#logoutBtn'),
 };
 
 const LEVELS = [
   { k: 'standard', n: '标准' },
   { k: 'higher', n: '较高' },
   { k: 'exhigh', n: '极高' },
-  { k: 'lossless', n: '无损' },
+  { k: 'lossless', n: '无损', needLogin: true },
+  { k: 'hires', n: '高解析度', needLogin: true },
 ];
 const MODES = ['列表循环', '单曲循环', '随机'];
 
@@ -38,6 +41,8 @@ const state = {
   analyser: null,
   source: null,
   current: null,
+  loggedIn: false,
+  account: null,
 };
 
 /* ----------------------------------------------------------- 小工具 */
@@ -349,15 +354,32 @@ els.mode.addEventListener('click', () => {
   audio.loop = state.mode === 1;
 });
 els.level.addEventListener('click', () => {
-  state.level = (state.level + 1) % LEVELS.length;
-  els.level.textContent = LEVELS[state.level].n;
-  if (state.current) {
-    const keep = audio.currentTime;
-    audio.src = `/stream?id=${state.current.id}&level=${LEVELS[state.level].k}`;
-    audio.currentTime = keep;
-    audio.play().catch(() => {});
+  const next = (state.level + 1) % LEVELS.length;
+  if (LEVELS[next].needLogin && !state.loggedIn) {
+    toast('无损 / 高解析度需要登录网易云账号', true);
+    openLogin();
+    return;
   }
+  state.level = next;
+  els.level.textContent = LEVELS[state.level].n;
+  if (state.current) reloadCurrent();
 });
+
+/** 用当前音质重新加载正在播放的曲目（保持进度） */
+function reloadCurrent() {
+  if (!state.current) return;
+  const keep = audio.currentTime;
+  const playing = !audio.paused;
+  audio.src = `/stream?id=${state.current.id}&level=${LEVELS[state.level].k}`;
+  audio.addEventListener(
+    'loadedmetadata',
+    () => {
+      try { audio.currentTime = Math.min(keep, audio.duration || keep); } catch {}
+      if (playing) audio.play().catch(() => {});
+    },
+    { once: true },
+  );
+}
 els.panelToggle.addEventListener('click', () => {
   els.panel.classList.toggle('collapsed');
   els.panelToggle.textContent = els.panel.classList.contains('collapsed') ? '+' : '−';
@@ -397,8 +419,120 @@ els.searchForm.addEventListener('submit', async (e) => {
   }
 });
 
+/* ----------------------------------------------------------- 扫码登录 */
+let qrTimer = null;
+
+async function refreshAccount() {
+  try {
+    const j = await api('/login/status');
+    applyAccount(j.logged ? j.profile : null, j.account);
+  } catch {
+    applyAccount(null, null);
+  }
+}
+
+function applyAccount(profile, account) {
+  state.loggedIn = !!(profile && profile.userId);
+  state.account = profile || null;
+  const vip = (profile && profile.vipType) || (account && account.vipType) || 0;
+  els.acct.classList.toggle('on', state.loggedIn);
+  if (state.loggedIn) {
+    const av = profile.avatarUrl ? `<img src="${profile.avatarUrl}" alt="">` : '';
+    const badge = vip > 0 ? '<span class="vip">VIP</span>' : '';
+    els.acct.innerHTML = `${av}<span class="acct-dot"></span><span>${escapeHtml(profile.nickname || '已登录')}</span>${badge}`;
+  } else {
+    els.acct.innerHTML = '<span class="acct-dot"></span><span>未登录</span>';
+  }
+  // 弹层里的账号信息
+  if (state.loggedIn) {
+    els.acctInfo.innerHTML =
+      `<div>${escapeHtml(profile.nickname || '')} ${vip > 0 ? '<span class="vip">VIP</span>' : ''}</div>` +
+      `<div class="sub">UID ${profile.userId} · 音质上限 ${vip > 0 ? '无损 / 高解析度' : '极高'}</div>`;
+    els.logoutBtn.style.display = 'inline-block';
+    els.qrBox.innerHTML = profile.avatarUrl ? `<img src="${profile.avatarUrl}" alt="头像">` : '<div class="qr-loading">已登录</div>';
+    els.qrStatus.className = 'qr-status ok';
+    els.qrStatus.textContent = '已登录';
+  } else {
+    els.acctInfo.innerHTML = '';
+    els.logoutBtn.style.display = 'none';
+  }
+}
+
+function openLogin() {
+  els.loginMask.classList.add('show');
+  if (state.loggedIn) return;      // 已登录：直接展示账号信息
+  loadQr();
+}
+
+async function loadQr() {
+  clearInterval(qrTimer);
+  els.qrBox.innerHTML = '<div class="qr-loading">正在取二维码…</div>';
+  els.qrStatus.className = 'qr-status';
+  els.qrStatus.textContent = '等待扫码';
+  try {
+    const j = await api('/login/qr');
+    if (!j.ok) throw new Error(j.error || '取二维码失败');
+    els.qrBox.innerHTML = `<img alt="登录二维码" src="${j.img}">`;
+    const key = j.key;
+    qrTimer = setInterval(async () => {
+      try {
+        const r = await api('/login/qr/check?key=' + encodeURIComponent(key));
+        if (r.code === 803) {
+          clearInterval(qrTimer);
+          els.qrStatus.className = 'qr-status ok';
+          els.qrStatus.textContent = '登录成功';
+          applyAccount(r.profile, r.account);
+          const nick = (r.profile && r.profile.nickname) || '';
+          const isVip = ((r.profile && r.profile.vipType) || 0) > 0;
+          toast(`已登录：${nick}${isVip ? ' · 黑胶VIP' : ''}（可切无损音质了）`);
+          setTimeout(() => els.loginMask.classList.remove('show'), 1200);
+          if (state.current) reloadCurrent();     // 之前因版权/VIP 失败的曲目现在能放了
+        } else if (r.code === 802) {
+          els.qrStatus.textContent = '已扫码，请在手机上确认';
+        } else if (r.code === 800) {
+          els.qrStatus.className = 'qr-status bad';
+          els.qrStatus.textContent = '二维码已过期，正在刷新…';
+          loadQr();
+        } else {
+          els.qrStatus.textContent = '等待扫码';
+        }
+      } catch {
+        /* 网络抖动就继续轮询 */
+      }
+    }, 2200);
+  } catch (err) {
+    els.qrBox.innerHTML = '<div class="qr-loading">二维码获取失败</div>';
+    els.qrStatus.className = 'qr-status bad';
+    els.qrStatus.textContent = err.message;
+  }
+}
+
+els.acct.addEventListener('click', openLogin);
+els.loginClose.addEventListener('click', () => {
+  clearInterval(qrTimer);
+  els.loginMask.classList.remove('show');
+});
+els.loginMask.addEventListener('click', (e) => {
+  if (e.target === els.loginMask) {
+    clearInterval(qrTimer);
+    els.loginMask.classList.remove('show');
+  }
+});
+els.logoutBtn.addEventListener('click', async () => {
+  try {
+    await api('/logout');
+  } catch {}
+  state.loggedIn = false;
+  state.account = null;
+  applyAccount(null, null);
+  els.qrStatus.textContent = '已退出登录';
+  toast('已退出登录');
+  loadQr();
+});
+
 /* ----------------------------------------------------------- 首屏推荐 */
 async function boot() {
+  refreshAccount();                 // 先看有没有登录态
   try {
     const j = await api('/playlist/detail?id=3778678');   // 热歌榜
     const tracks = (j.playlist?.tracks || []).slice(0, 40).map(normalizeSong);

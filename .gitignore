@@ -4,5 +4,8 @@ logs/
 .DS_Store
 Thumbs.db
 
+# 登录凭据（网易云 cookie）——绝对不能进仓库
+.cookie
+
 # 第三方网易云 API 服务（单独 clone，不纳入本仓库）
 api/

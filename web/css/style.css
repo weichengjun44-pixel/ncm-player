@@ -273,6 +273,64 @@ button.ghost:hover { color: var(--accent); border-color: rgba(110, 231, 255, 0.4
   font-family: ui-monospace, Consolas, monospace; word-break: break-all;
 }
 
+/* ---------------- 账号 / 扫码登录 ---------------- */
+.acct {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--glass); border: 1px solid var(--line); color: var(--dim);
+  padding: 8px 15px; border-radius: 999px; cursor: pointer;
+  font-size: 12.5px; letter-spacing: 0.04em;
+  backdrop-filter: blur(var(--blur)); box-shadow: var(--shadow);
+  transition: all 0.25s;
+}
+.acct:hover { color: var(--fg); border-color: rgba(110, 231, 255, 0.45); }
+.acct.on { color: var(--fg); border-color: rgba(110, 231, 255, 0.4); }
+.acct .acct-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--dim2); transition: all 0.3s;
+}
+.acct.on .acct-dot { background: #67e8a0; box-shadow: 0 0 12px #67e8a0; }
+.acct .vip {
+  font-size: 10px; padding: 1px 6px; border-radius: 999px;
+  background: linear-gradient(135deg, #ffd479, #ff7ac6); color: #3a1a00; font-weight: 700;
+}
+.acct img { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; }
+
+.mask {
+  position: fixed; inset: 0; z-index: 55; display: none;
+  place-items: center; background: rgba(2, 4, 10, 0.72);
+  backdrop-filter: blur(6px);
+}
+.mask.show { display: grid; }
+.login-card {
+  position: relative; width: min(92vw, 380px); padding: 26px 26px 22px;
+  background: var(--glass-2); border: 1px solid var(--line); border-radius: 22px;
+  backdrop-filter: blur(26px); box-shadow: var(--shadow); text-align: center;
+  animation: pop 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes pop { from { transform: scale(0.94) translateY(10px); opacity: 0; } }
+.login-card h3 { margin: 0 0 8px; font-size: 17px; letter-spacing: 0.06em; }
+.login-card .hint { margin: 0 0 18px; font-size: 12px; color: var(--dim); line-height: 1.7; }
+.login-card .hint b { color: var(--accent); }
+.login-card .close {
+  position: absolute; top: 12px; right: 12px; font-size: 16px; line-height: 1;
+  width: 26px; height: 26px;
+}
+.qr-box {
+  width: 208px; height: 208px; margin: 0 auto;
+  display: grid; place-items: center;
+  background: #fff; border-radius: 14px; padding: 10px;
+  box-shadow: 0 0 40px rgba(110, 231, 255, 0.25);
+}
+.qr-box img { width: 100%; height: 100%; display: block; }
+.qr-loading { color: #334; font-size: 12px; }
+.qr-status { margin-top: 14px; font-size: 12.5px; color: var(--dim); letter-spacing: 0.05em; }
+.qr-status.ok { color: #67e8a0; }
+.qr-status.bad { color: var(--accent-3); }
+.acct-info { margin-top: 10px; font-size: 12.5px; color: var(--fg); line-height: 1.8; }
+.acct-info .sub { color: var(--dim2); font-size: 11.5px; }
+.pill.danger { margin-top: 14px; border-color: rgba(255, 122, 198, 0.5); color: #ffd9ee; }
+.pill.danger:hover { background: rgba(255, 122, 198, 0.14); }
+
 /* ---------------- 响应式 ---------------- */
 @media (max-width: 1080px) {
   .bottom { grid-template-columns: 1fr; gap: 12px; }
