@@ -346,3 +346,29 @@ bash desktop/test-installer.sh --uninstall  # 卸载 → 验证清理
 - **登录态与数据目录绑定**：安装版的数据目录是 `D:\NebulaPlayer\data`，与开发版（项目根）不同。
   实机上看到「已登录」是因为它复用了开发环境跑着的服务；**独立运行需要在新数据目录里登录一次**
   （或把 `.cookie*` 复制过去）。
+
+### 已知噪音：打包版启动时的 zstd 解压失败（不影响功能）
+
+打包版日志里会出现：
+
+```
+Error: unexpected EOF
+    at decompress (.../api/node_modules/fzstd/lib/index.js:634:21)
+```
+
+**根因**：`api/util/zstd.js` 里有个分支 ——
+
+```js
+const hasNative = typeof zlib.zstdCompressSync === 'function'
+return hasNative ? zlib.zstdDecompressSync(buf) : Buffer.from(fzstdDecompress(buf))
+```
+
+Node ≥22.15 有原生 zstd（走原生分支）；**Electron 自带的是 Node 20**，于是走 fzstd 分支。
+某些**合法的 zstd 流** fzstd@0.1.1 解不了，原生解码器却能解 —— 所以**这个错只在打包版出现，
+开发环境（系统 Node 26）从来没见过**。这解释了为什么它看起来像"偶发网络抖动"，其实是确定性的。
+
+**为什么不影响功能**：报错之后 API 照常启动，`/search`、歌单、取流、歌词、MV 全部实测 200。
+（那条"Successfully registered anonimous token"日志本身也有点误导——上游把它打在了真正发请求**之前**。）
+
+**处理**：`services/fix-fzstd.sh` 已把它从"抛异常"降级为"记一条警告后按原文返回"，
+既不崩也不静默吞掉线索。想彻底消除需要换一个更完整的 zstd 解码器（fzstd 已是最新版，没有可升级的）。
