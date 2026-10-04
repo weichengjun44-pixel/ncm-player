@@ -19,7 +19,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 const BANDS = 128;
 const BOX = 110;                 // 盒子半边长（再次放大 → 空间更辽阔）
 const COVER_W = 74;             // 封面粒子平面宽度（放大一点，细节更看得清）
-const LYRIC_W = 64;             // 歌词粒子平面宽度
+const LYRIC_W = 88;             // 歌词粒子平面宽度（放大 1.37 倍）
 const IVORY = new THREE.Color('#fff3e2');    // 星尘主色：暖白（不是冷白）
 const AMBER = new THREE.Color('#ffb35c');    // 琥珀：暖色点缀
 const ROSE = new THREE.Color('#ff6fae');     // 玫红
@@ -806,7 +806,7 @@ export class VisualEngine {
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 }, uBass: { value: 0 }, uMid: { value: 0 }, uTreble: { value: 0 },
-        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 1.05 },
+        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 1.45 },
         uProgress: { value: 0 },
       },
       vertexShader: VERT_LYRIC,
@@ -1213,7 +1213,7 @@ export class VisualEngine {
     }
     if (this.lyricGroup) {
       this.lyricGroup.quaternion.copy(this.camera.quaternion);
-      this.lyricGroup.position.y = BOX * 0.46 + Math.sin(this.time * 0.5) * 1.3;
+      this.lyricGroup.position.y = -BOX * 0.47 + Math.sin(this.time * 0.5) * 1.3;   // 移到封面下方（原来在上方）
     }
     // 上一句正在散掉的那组
     if (this.lyricFade) {
