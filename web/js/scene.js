@@ -248,7 +248,10 @@ export class VisualEngine {
   setupScene() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.dpr = dpr;
-    this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({
+      canvas: this.canvas, antialias: true, powerPreference: 'high-performance',
+      preserveDrawingBuffer: true,   // 允许 canvas.toDataURL() 截图（探针回传画面用）
+    });
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setClearColor(0x000000, 1);   // 纯黑底：宇宙不是蓝的
@@ -404,8 +407,10 @@ export class VisualEngine {
       this.video.loop = true;
       this.video.playsInline = true;
       this.video.preload = 'auto';
-      this.video.crossOrigin = 'anonymous';
-      this.video.style.cssText = 'position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
+      // 注意：不要设 opacity:0 —— 某些内核会因此不给视频解帧（drawImage 全黑）；
+      // 也不能设 crossOrigin（同源不需要，且遇代理跳转会直接加载失败）。
+      // 这里用"2x2 像素、几乎透明、压到最底层"做到看不见但照常解码。
+      this.video.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none;z-index:-1';
       document.body.appendChild(this.video);
 
       this.VW = 320;                       // 采样分辨率（16:9）—— 对齐歌词的颗粒密度
@@ -447,7 +452,10 @@ export class VisualEngine {
         const nx = Math.abs(px / (this.VW - 1) * 2 - 1);
         const ny = Math.abs(py / (this.VH - 1) * 2 - 1);
         const e = Math.max(nx, ny);
-        this.videoFade[i] = 1 - Math.min(1, Math.max(0, (e - 0.82) / 0.18)) ** 1.5;
+        // 边缘渐隐 + 中央柔和减光（封面占 MV 宽度的约 22%，这里对正中 30% 区压暗到一半，
+        // 否则视频较亮的镜头会把封面粒子冲淡——两者都能看清才是目标）
+        const central = 0.5 + 0.5 * Math.min(1, e / 0.30);
+        this.videoFade[i] = (1 - Math.min(1, Math.max(0, (e - 0.82) / 0.18)) ** 1.5) * central;
       }
       this.videoGeo = g;
       this.videoMat = pointsMaterial({ uSwirl: { value: 0.004 }, uExpand: { value: 0.06 } });
@@ -459,6 +467,7 @@ export class VisualEngine {
       this.scene.add(this.videoPoints);
       this.videoLast = 0;
       this.videoUrl = null;
+      this.videoAlpha = 0.55;              // MV 亮度系数（实测定档：0.2 看不见 / 0.45 可见但压封面 / 0.7 全压）
     }
 
     // ---- 后期 ----
@@ -940,13 +949,19 @@ export class VisualEngine {
       const d = this.videoCtx.getImageData(0, 0, VW, VH).data;
       const col = this.videoGeo.attributes.aColor.array;
       const N = VW * VH;
+      let sum = 0;
       for (let i = 0; i < N; i++) {
         const o = i * 4;
-        const f = this.videoFade[i] * 0.145;  // 边缘渐隐 + 按密度等比压暗（粒子数 ×2.78）
+        const f = this.videoFade[i] * this.videoAlpha;   // 边缘渐隐 + 亮度系数（片元里还会再乘 0.34）
         col[i * 3] = (d[o] / 255) * f;
         col[i * 3 + 1] = (d[o + 1] / 255) * f;
         col[i * 3 + 2] = (d[o + 2] / 255) * f;
+        sum += d[o] + d[o + 1] + d[o + 2];
       }
+      this.videoLum = sum / (N * 3 * 255);        // 采样画面平均亮度（0~1）
+      this.videoLumMax = Math.max(this.videoLumMax || 0, this.videoLum);   // 历史峰值：判断"一直黑"还是"恰好是黑镜头"
+      const q = this.video.getVideoPlaybackQuality ? this.video.getVideoPlaybackQuality() : null;
+      this.videoFrames = (q && q.totalVideoFrames) || this.video.webkitDecodedFrameCount || 0;
       this.videoGeo.attributes.aColor.needsUpdate = true;
     } catch (e) {
       console.warn('[scene] MV 取样失败，关闭视频粒子:', e.message);
@@ -962,8 +977,12 @@ export class VisualEngine {
       mv: !this.videoPoints || !this.videoPoints.visible
         ? '无'
         : this.video.readyState >= 2
-          ? '播放中 ' + this.video.videoWidth + 'x' + this.video.videoHeight
+          ? this.video.videoWidth + 'x' + this.video.videoHeight
           : '加载中',
+      mvLum: Math.round((this.videoLum || 0) * 100),                       // 采样画面平均亮度 %
+      mvLumMax: Math.round((this.videoLumMax || 0) * 100),                 // 历史峰值 %
+      mvFrames: this.videoFrames || 0,                                     // 已解码帧数
+      mvT: this.video ? +this.video.currentTime.toFixed(1) : 0,            // 播放位置（秒）
       fps: Math.round(this.fps),
       theta: +this.view.theta.toFixed(2),
       radius: Math.round(this.view.radius),

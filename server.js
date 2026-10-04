@@ -394,6 +394,29 @@ async function handleAuth(req, res, url, p) {
 
 fs.mkdirSync(path.join(__dirname, 'logs'), { recursive: true });
 
+/* --------------------------------------------------------- 开发用：画面回传
+   探针 (?probe=1) 会把当前 canvas 的 PNG dataURL POST 到这里，存成 shots/latest.png，
+   方便直接看渲染结果（不用靠猜）。仅本机使用。 */
+function handleShot(req, res, url) {
+  let body = '';
+  req.on('data', (c) => { body += c; if (body.length > 16e6) req.destroy(); });
+  req.on('end', () => {
+    try {
+      const m = /^data:image\/png;base64,(.+)$/.exec(body.trim());
+      if (!m) { sendJson(res, 400, { ok: false, err: 'expect png data url' }); return; }
+      const dir = path.join(__dirname, 'shots');
+      fs.mkdirSync(dir, { recursive: true });
+      const buf = Buffer.from(m[1], 'base64');
+      const tag = (url.searchParams.get('tag') || 'latest').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 24) || 'latest';
+      fs.writeFileSync(path.join(dir, tag + '.png'), buf);
+      if (tag !== 'latest') fs.writeFileSync(path.join(dir, 'latest.png'), buf);
+      sendJson(res, 200, { ok: true, bytes: buf.length });
+    } catch (e) {
+      sendJson(res, 500, { ok: false, err: e.message });
+    }
+  });
+}
+
 const server = http.createServer((req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -410,6 +433,7 @@ const server = http.createServer((req, res) => {
     if (p === '/stream') return void proxyStream(req, res, url);
     if (p === '/mv') return void proxyMv(req, res, url);
     if (p === '/cover') return void proxyCover(req, res, url);
+    if (p === '/__shot' && req.method === 'POST') return void handleShot(req, res, url);
     return serveStatic(req, res, url);
   } catch (err) {
     log('!! 请求处理异常:', err && err.stack ? err.stack.split('\n')[0] : err);

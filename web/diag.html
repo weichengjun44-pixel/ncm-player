@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>MV 采样诊断</title>
+<style>
+  body { margin: 0; padding: 14px; background: #0b0b0f; color: #e8e2d6;
+         font: 13px/1.6 "Cascadia Mono", Consolas, monospace; }
+  pre { margin: 0 0 12px; white-space: pre-wrap; }
+  video { width: 200px; height: 112px; background: #000; border: 1px solid #333; }
+  .hint { color: #8d8578; margin-top: 10px; }
+</style>
+</head>
+<body>
+<pre id="out">启动…</pre>
+<video id="v" muted playsinline preload="auto"></video>
+<div class="hint">?id=&lt;mvid&gt; 换 MV。这个页面只做一件事：把 /mv 流转成画面并量它的亮度——
+用来分清"MV 根本没画面"还是"MV 画面本身很暗"。</div>
+<script>
+  const id = new URLSearchParams(location.search).get('id') || '5293234';
+  const v = document.getElementById('v');
+  const out = document.getElementById('out');
+
+  const cv = document.createElement('canvas');
+  cv.width = 320; cv.height = 180;
+  const cx = cv.getContext('2d', { willReadFrequently: true });
+
+  let max = 0, note = '', playErr = '';
+  v.src = '/mv?id=' + id;
+  v.play().catch((e) => { playErr = 'play() 被拒: ' + e.message; });
+
+  setInterval(() => {
+    let lum = 0;
+    const d = [];
+    try {
+      cx.drawImage(v, 0, 0, 320, 180);
+      const px = cx.getImageData(0, 0, 320, 180).data;
+      let s = 0;
+      for (let i = 0; i < px.length; i += 4) s += px[i] + px[i + 1] + px[i + 2];
+      lum = s / ((px.length / 4) * 3 * 255);
+      if (lum > max) max = lum;
+      note = '';
+    } catch (e) {
+      note = '  [取像素失败: ' + e.message + ']';
+    }
+    const q = v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality() : {};
+    out.textContent =
+      'MV id          ' + id + '\n' +
+      '画面尺寸       ' + v.videoWidth + 'x' + v.videoHeight + '   readyState=' + v.readyState + (v.error ? '  error=' + v.error.code : '') + '\n' +
+      '播放位置       ' + v.currentTime.toFixed(1) + 's   paused=' + v.paused + '   loop=' + v.loop + '\n' +
+      '解码帧数       ' + (q.totalVideoFrames || v.webkitDecodedFrameCount || '?') + '\n' +
+      '当前画面亮度   ' + (lum * 100).toFixed(1) + '%      历史峰值 ' + (max * 100).toFixed(1) + '%\n' +
+      '流地址         ' + String(v.currentSrc || '').slice(0, 96) + '\n' +
+      (playErr ? playErr + '\n' : '') + note;
+  }, 1000);
+</script>
+</body>
+</html>

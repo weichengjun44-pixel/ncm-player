@@ -718,6 +718,69 @@ if (new URLSearchParams(location.search).has('probe')) {
     box.style.cssText = 'position:fixed;left:8px;top:8px;z-index:99;color:#fff;background:#000;font:11px monospace;max-width:96vw;white-space:pre-wrap;padding:6px';
     box.textContent = out.join(NL);
     document.body.appendChild(box);
+
+    // ---- 诊断用：把相机固定成"正视图"并冻结自动旋转，保证截图可比 ----
+    if (window.__ncm && window.__ncm.visual) {
+      const v = window.__ncm.visual.view;
+      v.theta = Math.PI / 2; v.phi = Math.PI / 2; v.radius = 200; v.vTheta = 0; v.vPhi = 0;
+      window.__ncm.visual.dragging = true;      // 冻结自动慢转，否则视角会飘
+    }
+
+    // 诊断用：直接点第 5 首（带 MV）→ 触发封面/歌词/MV 加载。
+    // 合成点击可能过不了自动播放策略（音频不响），但视觉部分照常加载，足够验收画面。
+    setTimeout(() => {
+      const items = document.querySelectorAll('#list .item');
+      if (items[4]) items[4].click();
+    }, 1500);
+
+    // ---- 诊断台：?stage=<songId> 直接用 scene.js 的接口挂封面/歌词/MV（绕过 UI，便于截图对照）----
+    const stageId = new URLSearchParams(location.search).get('stage');
+    const info2 = document.createElement('div');
+    box.appendChild(info2);
+    if (stageId && window.__ncm && window.__ncm.visual) {
+      const V = window.__ncm.visual;
+      fetch('/api/song/detail?ids=' + stageId)
+        .then((r) => r.json())
+        .then(async (d) => {
+          const s = (d.songs || [])[0];
+          if (!s) { info2.textContent = 'stage: 查不到这首歌'; return; }
+          info2.textContent = 'stage: ' + s.name + ' — ' + (s.ar || []).map((x) => x.name).join('/') +
+            ' · 封面=' + ((s.picUrl || (s.al && s.al.picUrl)) ? '有' : '无') + ' · mvid=' + (s.mv || '无');
+          const cover = s.picUrl || (s.al && s.al.picUrl);
+          if (cover) V.setCoverToParticles('/cover?url=' + encodeURIComponent(cover));
+          V.setLyricParticles('母带后期处理录音室：Studio 21A');
+          V.setPlaying(true);
+          if (s.mv) {
+            const u = await (await fetch('/api/mv/url?id=' + s.mv + '&r=1080')).json();
+            if (u && u.data && u.data.url) {
+              V.attachVideo('/mv?id=' + s.mv);
+              info2.textContent += ' · MV 已挂';
+            } else {
+              info2.textContent += ' · MV 取不到地址';
+            }
+          }
+        })
+        .catch((e) => { info2.textContent = 'stage 出错: ' + e.message; });
+    }
+
+    // ---- 自截图回传：每 4 秒把画面 POST 回服务端（存 shots/latest.png），便于直接看渲染结果 ----
+    let shotN = 0;
+    const stageEl = document.getElementById('stage');
+    const infoEl = document.createElement('div');
+    box.appendChild(infoEl);
+    setInterval(() => {
+      try {
+        const u = stageEl.toDataURL('image/png');
+        const tag = 'a' + String((window.__ncm && window.__ncm.visual.videoAlpha) || 0).replace('.', '');
+        fetch('/__shot?tag=' + tag, { method: 'POST', body: u })
+          .then((r) => r.json())
+          .then((j) => {
+            shotN += 1;
+            infoEl.textContent = '截图回传 ' + shotN + ' 次 · 最近 ' + Math.round((j.bytes || 0) / 1024) + 'KB';
+          })
+          .catch((e) => { infoEl.textContent = '截图失败: ' + e.message; });
+      } catch (e) { infoEl.textContent = '截图异常: ' + e.message; }
+    }, 4000);
   }, 3500);
 }
 
@@ -727,7 +790,7 @@ if (new URLSearchParams(location.search).has('debug')) {
   setInterval(() => {
     const d = visual.debugInfo();
     els.dbg.textContent =
-      `封面粒子 ${d.coverPoints} · 歌词粒子 ${d.lyricPoints}\nMV 粒子幕 ${d.mv} · 色组 ${d.palette} 色\n${d.fps} fps · 视角 θ=${d.theta} r=${d.radius} · 能量 ${d.level}`;
+      `封面粒子 ${d.coverPoints} · 歌词粒子 ${d.lyricPoints}\nMV ${d.mv} · 亮度 ${d.mvLum}%(峰值${d.mvLumMax}%) · ${d.mvFrames}帧 · ${d.mvT}s\n${d.fps} fps · 视角 θ=${d.theta} r=${d.radius} · 能量 ${d.level}`;
   }, 600);
 }
 
