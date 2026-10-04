@@ -18,6 +18,43 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const BANDS = 128;
 const BOX = 110;                 // 盒子半边长（再次放大 → 空间更辽阔）
+/* ------------------------------------------------------------------ 画质分档
+   为什么必须分档：桌面版是 MV 92 万 + 封面 37 万 ≈ 140 万颗粒子（每帧还要上传颜色），
+   桌面 GPU 轻松 300fps，但手机上直接变幻灯片、还费电发热。
+   默认按设备自动判定；?q=low|mid|high 可强制（诊断和分享用）。 */
+const _uq = (() => { try { return new URLSearchParams(location.search).get('q'); } catch { return null; } })();
+const IS_SMALL_TOUCH = (() => {
+  try {
+    const ua = navigator.userAgent || '';
+    if (/Android|iPhone|iPad|iPod|Mobile|HarmonyOS/i.test(ua)) return true;
+    // 有些平板/折叠屏 UA 不带 Mobile，用"触摸点 + 屏幕尺寸"兜底
+    return (navigator.maxTouchPoints || 0) > 1 && Math.min(screen.width, screen.height) < 820;
+  } catch { return false; }
+})();
+const QUALITY = (_uq === 'low' || _uq === 'mid' || _uq === 'high') ? _uq : (IS_SMALL_TOUCH ? 'low' : 'high');
+const QP = {
+  // 采样分辨率换算：MV 格子会随分辨率等比变大，点径按格子同步缩放，所以观感一致、只是颗粒变粗
+  // bloomScale：泛光的分辨率系数。UnrealBloom 内部本来就是多级降采样 + 模糊，
+  // 半分辨率跑视觉几乎无差、开销降到约 1/4。泛光不能整个关掉 —— 关掉画面立刻发灰，
+  // 那是"不要发灰"这条要求的底线，只能降成本、不能砍效果。
+  low:  { mvW: 480,  mvH: 270, coverW: 448, dpr: 1.5, bloomScale: 0.5 },
+  mid:  { mvW: 768,  mvH: 432, coverW: 640, dpr: 2,   bloomScale: 1 },
+  high: { mvW: 1280, mvH: 720, coverW: 900, dpr: 2,   bloomScale: 1 },
+}[QUALITY];
+
+// 可按系数缩放的泛光 pass：composer.setSize() 会级联调用每个 pass 的 setSize，
+// 所以缩放必须做在 pass 里（在外面传小尺寸会被 resize 覆盖掉）。
+class ScaledBloomPass extends UnrealBloomPass {
+  constructor(scale, resolution, strength, radius, threshold) {
+    super(resolution, strength, radius, threshold);
+    this.bloomScale = scale;
+  }
+  setSize(w, h) {
+    super.setSize(Math.max(2, Math.round(w * this.bloomScale)),
+                  Math.max(2, Math.round(h * this.bloomScale)));
+  }
+}
+
 const COVER_W = 74;             // 封面粒子平面宽度（放大一点，细节更看得清）
 const LYRIC_W = 88;             // 歌词粒子平面宽度（放大 1.37 倍）
 const IVORY = new THREE.Color('#fff3e2');    // 星尘主色：暖白（不是冷白）
@@ -293,7 +330,7 @@ export class VisualEngine {
 
   /* ---------------------------------------------------------- 场景 */
   setupScene() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, QP.dpr);
     this.dpr = dpr;
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas, antialias: true, powerPreference: 'high-performance',
@@ -465,8 +502,8 @@ export class VisualEngine {
       this.video.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none;z-index:-1';
       document.body.appendChild(this.video);
 
-      this.VW = 1280;                      // 采样分辨率（16:9）—— 格子 0.336 单位 ≈ 1 CSS px
-      this.VH = 720;                       // 即"屏幕像素级"：HD 源能吃到真实细节，SD 源是平滑放大
+      this.VW = QP.mvW;                    // 采样分辨率（16:9），按画质档：720p / 432p / 270p
+      this.VH = QP.mvH;
       this.videoCanvas = document.createElement('canvas');
       this.videoCanvas.width = this.VW;
       this.videoCanvas.height = this.VH;
@@ -487,9 +524,13 @@ export class VisualEngine {
     // ---- 后期 ----
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.46, 0.48, 0.52);
+    // 泛光始终开（关掉就发灰）；低画质档按 bloomScale 降分辨率来控制开销
+    this.bloom = new ScaledBloomPass(QP.bloomScale,
+      new THREE.Vector2(window.innerWidth, window.innerHeight), 0.46, 0.48, 0.52);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
+    this.quality = QUALITY;                // 供 app.js / 调试条使用
+    this.qualityPreset = QP;
 
     window.addEventListener('resize', () => this.onResize());
   }
@@ -528,6 +569,29 @@ export class VisualEngine {
       this.view.radius = Math.max(4, Math.min(520, this.view.radius * k));
     }, { passive: false });
     el.addEventListener('dblclick', () => this.resetView());
+
+    // ---- 触摸手势：触摸设备没有 wheel，不补这段手机上根本没法拉近/拉远
+    let pinchStart = 0, pinchRadius = 0;
+    el.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        this.dragging = false;                       // 双指时停掉单指拖拽旋转，避免两个手势打架
+        pinchStart = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY);
+        pinchRadius = this.view.radius;
+      }
+    }, { passive: true });
+    el.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2 && pinchStart > 0) {
+        e.preventDefault();
+        const d = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY);
+        // 两指分开 = 拉近（半径变小），捏合 = 拉远，和滚轮方向一致
+        this.view.radius = Math.max(4, Math.min(520, pinchRadius * (pinchStart / Math.max(1, d))));
+      }
+    }, { passive: false });
+    el.addEventListener('touchend', () => { pinchStart = 0; }, { passive: true });
   }
 
   resetView() {
@@ -1185,6 +1249,7 @@ export class VisualEngine {
       coverPoints: this.coverPoints,
       lyricPoints: this.lyricPoints || 0,
       palette: (this.palette || []).length,
+      quality: this.quality || "high",
       pts: this.scene.children.filter(o => o.isPoints && o.geometry).map(o => Math.round(o.geometry.attributes.position.count / 1000) + 'k' + (o.visible ? '' : '隐')).join(' / '),
       mv: !this.videoPoints || !this.videoPoints.visible
         ? '无'

@@ -437,3 +437,34 @@ button.ghost:hover { color: var(--accent); border-color: rgba(255, 196, 107, 0.4
 .auth-input::placeholder { color: rgba(255, 255, 255, .28); }
 .auth-row { display: flex; gap: 8px; margin-top: 2px; }
 .auth-row .pill { flex: 1; }
+
+/* ---------- 手机端 ---------- */
+/* 依据：手机屏幕小、没有 hover、触摸目标要够大。
+   粒子量已经在 scene.js 里按画质档降下来了（手机默认 low），这里只解决布局与触摸。 */
+@media (max-width: 640px) {
+  /* 列表占满上半屏，控制条留够高度 */
+  .panel { top: 60px; left: 8px; right: 8px; width: auto; bottom: 46vh; }
+  .panel.collapsed { transform: translateX(-105%); }
+  /* 触摸目标不小于 44px（这是可用性的硬线，不是美观问题） */
+  .ctl { width: 50px; height: 50px; }
+  .ctl.main { width: 62px; height: 62px; }
+  .src-pill { padding: 10px 4px; font-size: 13px; }
+  .search input { width: 54vw; font-size: 14px; }
+  .bottom { grid-template-columns: 1fr; gap: 10px; padding: 10px 12px 14px; }
+  .tabs .tab { padding: 8px 12px; font-size: 13px; }
+  .item { padding: 10px 8px; }
+  .acct { padding: 6px 10px; }
+  /* 手机上别让歌词被控制条压住（fitLayout 也会按实测高度修一次，这里给个兜底） */
+  .center { bottom: 190px; }
+}
+
+/* 没有 hover 的设备：把"悬停才出现"的东西常驻，否则手机上永远点不到 */
+@media (hover: none) {
+  .panel.collapsed + .peek { opacity: 1; }
+}
+
+/* 横屏手机：控制条缩短，别挤掉画面 */
+@media (max-height: 480px) and (orientation: landscape) {
+  .bottom { padding: 6px 12px 8px; }
+  .center { bottom: 120px; }
+}

@@ -29,6 +29,9 @@ const DATA_ROOT = process.env.NCM_DATA_DIR || __dirname;
 const WEB_DIR = process.env.NCM_WEB_DIR || path.join(__dirname, 'web');
 
 const MIME = {
+  // .webmanifest 必须给正确类型：Chrome 对清单的 MIME 是硬校验，
+  // 返回 application/octet-stream 会直接拒绝清单 → "添加到主屏幕"失效
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',

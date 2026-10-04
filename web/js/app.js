@@ -184,7 +184,7 @@ function playIndex(i) {
     els.cover.src = proxied;
     els.cover.onload = () => els.cover.classList.add('ok');
     // 封面 → 粒子：同源代理后取像素，采样成上万颗粒子
-    visual.setCoverToParticles(proxied, { width: 900 }).catch((e) => console.warn('封面粒子化失败', e));
+    visual.setCoverToParticles(proxied, { width: (visual.qualityPreset && visual.qualityPreset.coverW) || 900 }).catch((e) => console.warn('封面粒子化失败', e));
   } else {
     visual.clearCover();
   }
@@ -443,7 +443,7 @@ const BOX_NAMES = { 1: '自由视角', 2: '电影镜头舞台', 3: '无封面（
 visual.onLeaveCoverless = () => {
   if (state.current && state.current.cover) {
     const src = String(state.current.cover).replace(/\?.*$/, '') + '?param=1024y1024';
-    visual.setCoverToParticles('/cover?url=' + encodeURIComponent(src), { width: 900 })
+    visual.setCoverToParticles('/cover?url=' + encodeURIComponent(src), { width: (visual.qualityPreset && visual.qualityPreset.coverW) || 900 })
       .catch((e) => console.warn('封面粒子化失败', e));
   }
 };
@@ -1183,7 +1183,7 @@ if (new URLSearchParams(location.search).has('debug')) {
   setInterval(() => {
     const d = visual.debugInfo();
     els.dbg.textContent =
-      `封面粒子 ${d.coverPoints} · 歌词粒子 ${d.lyricPoints}\n点云 ${d.pts}\nMV ${d.mv} · 亮度 ${d.mvLum}%(峰值${d.mvLumMax}%) · ${d.mvFrames}帧 · ${d.mvT}s\n${d.fps} fps · 视角 θ=${d.theta} r=${d.radius} · 能量 ${d.level}`;
+      `画质 ${d.quality} · 封面粒子 ${d.coverPoints} · 歌词粒子 ${d.lyricPoints}\n点云 ${d.pts}\nMV ${d.mv} · 亮度 ${d.mvLum}%(峰值${d.mvLumMax}%) · ${d.mvFrames}帧 · ${d.mvT}s\n${d.fps} fps · 视角 θ=${d.theta} r=${d.radius} · 能量 ${d.level}`;
   }, 600);
 }
 
