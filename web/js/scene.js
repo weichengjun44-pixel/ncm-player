@@ -420,15 +420,15 @@ export class VisualEngine {
       this.video.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none;z-index:-1';
       document.body.appendChild(this.video);
 
-      this.VW = 384;                       // 采样分辨率（16:9）—— 平面放大后同步提密度
-      this.VH = 216;
+      this.VW = 544;                       // 采样分辨率（16:9）—— 随平面等比提高，格子尺寸保持不变
+      this.VH = 306;
       this.videoCanvas = document.createElement('canvas');
       this.videoCanvas.width = this.VW;
       this.videoCanvas.height = this.VH;
       this.videoCtx = this.videoCanvas.getContext('2d', { willReadFrequently: true });
 
       const N = this.VW * this.VH;
-      const planeW = 300;                  // 挂相机前 260 处，铺满视口（视口在 260 处约 287 单位宽）
+      const planeW = 430;                  // 相机前 260 处：放大 1.43 倍（视口在该处约 287 单位宽 → 画面铺满并溢出）
       const planeH = planeW * (this.VH / this.VW);
       const pos = new Float32Array(N * 3);
       const col = new Float32Array(N * 3);   // 每帧刷新
