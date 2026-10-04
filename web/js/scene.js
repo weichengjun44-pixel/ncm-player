@@ -48,7 +48,7 @@ function glowTexture(inner = 'rgba(255,255,255,1)') {
 
 /* ------------------------------------------------------------ 通用粒子着色器 */
 const VERT_POINTS = /* glsl */ `
-  uniform float uTime, uBass, uMid, uTreble, uLevel, uSwirl, uExpand, uPixel;
+  uniform float uTime, uBass, uMid, uTreble, uLevel, uSwirl, uExpand, uPixel, uInflow;
   attribute vec3 aColor;
   attribute float aSeed;
   attribute float aSize;
@@ -64,6 +64,13 @@ const VERT_POINTS = /* glsl */ `
     p *= 1.0 + uBass * 0.2 * uExpand;
     p.y += sin(uTime * 0.7 + aSeed * 21.0) * (1.0 + uMid * 4.0);
     p += vec3(fract(aSeed*71.3)-0.5, fract(aSeed*39.7)-0.5, fract(aSeed*57.1)-0.5) * uTreble * 3.6 * (0.3 + aSeed);
+
+    // 反向交换：极少数浮尘会被"吸"向中心一段再退回（uInflow=0 的层不受影响）
+    if (uInflow > 0.0) {
+      float cyc2 = fract(uTime * 0.03 + fract(aSeed * 11.3));
+      float pull = pow(max(0.0, sin(cyc2 * 6.2831853)), 14.0) * uInflow;
+      p -= normalize(p + 0.0001) * pull * 16.0;
+    }
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mv;
     gl_PointSize = aSize * uPixel * (300.0 / max(-mv.z, 1.0)) * (1.0 + uLevel * 0.7);
@@ -85,13 +92,15 @@ const FRAG_POINTS = /* glsl */ `
 
 /* 封面粒子：从散开位置飞回封面 + 节拍外推 + 回位 */
 const VERT_COVER = /* glsl */ `
-  uniform float uTime, uBass, uMid, uTreble, uLevel, uMorph, uPixel, uSize;
+  uniform float uTime, uBass, uMid, uTreble, uLevel, uMorph, uPixel, uSize, uHalfW, uEntropy;
   attribute vec3 aHome;
   attribute vec3 aScatter;
   attribute vec3 aColor;
   attribute float aSeed;
   varying vec3 vColor;
   varying float vAlpha;
+  varying float vAway;
+  varying float vEdge;
   void main() {
     vColor = aColor;
     float m = clamp(uMorph, 0.0, 1.0);
@@ -106,22 +115,42 @@ const VERT_COVER = /* glsl */ `
     p.z += sin(uTime * 1.5 + aSeed * 26.0) * uMid * 4.0 * e;
     p.y += sin(uTime * 0.9 + aHome.x * 0.12) * uMid * 1.6 * e;
 
+    // ---- 形态不再方正：切比雪夫距离 → 0 中心 / 1 边缘；边缘粒子更"松" ----
+    float rn = max(abs(aHome.x), abs(aHome.y)) / max(uHalfW, 1.0);
+    vEdge = smoothstep(0.40, 1.02, rn);
+
+    // 边缘常年带着一点飘移，轮廓就化在浮尘里了
+    vec3 edgeDir = normalize(vec3(aHome.xy, 2.5));
+    float wob = sin(uTime * 0.55 + aSeed * 47.0) * 0.5 + sin(uTime * 0.23 + aSeed * 91.0) * 0.5;
+    p += edgeDir * wob * (0.4 + vEdge * 7.5) * e;
+
+    // ---- 熵增：每颗粒子有自己的周期，会离开封面飘进空间，再自己回来 ----
+    float cyc = fract(uTime * 0.034 + fract(aSeed * 13.7));
+    float pulse = pow(max(0.0, sin(cyc * 6.2831853)), 10.0);
+    vAway = pulse * (0.30 + vEdge * 0.70) * uEntropy * e;
+    p += edgeDir * vAway * (30.0 + 48.0 * fract(aSeed * 7.7));
+    p += vec3(fract(aSeed*29.7)-0.5, fract(aSeed*53.1)-0.5, fract(aSeed*17.3)-0.5) * vAway * 26.0;
+
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mv;
     gl_PointSize = uSize * uPixel * (300.0 / max(-mv.z, 1.0)) * (0.7 + e * 0.5 + uLevel * 0.6);
-    vAlpha = 0.30 + 0.70 * aSeed;
+    vAlpha = (0.30 + 0.70 * aSeed) * (1.0 - vEdge * 0.22);      // 边缘本来就淡一点
   }
 `;
 const FRAG_COVER = /* glsl */ `
   uniform float uLevel, uMorph;
   varying vec3 vColor;
   varying float vAlpha;
+  varying float vAway;
+  varying float vEdge;
   void main() {
     float d = length(gl_PointCoord - 0.5);
     float m = smoothstep(0.5, 0.38, d);          // 近乎实心圆点：细节最锐（软边会糊成一团光）
     if (m <= 0.004) discard;
-    // 亮度压到 0.42：现在粒子密度翻倍，叠加后如果还按 0.62 会过曝白掉
-    gl_FragColor = vec4(vColor * (0.54 + uLevel * 0.28), m * vAlpha * (0.34 + 0.42 * clamp(uMorph,0.0,1.0) + uLevel * 0.20));
+    // 飘出去的粒子褪色成暖白 → 看起来就是"扩散进浮尘里的物质"
+    vec3 col = mix(vColor, vec3(1.0, 0.93, 0.84), clamp(vAway * 1.6, 0.0, 1.0));
+    float fade = 1.0 - clamp(vAway, 0.0, 1.0) * 0.55;
+    gl_FragColor = vec4(col * (0.54 + uLevel * 0.28), m * vAlpha * fade * (0.34 + 0.42 * clamp(uMorph,0.0,1.0) + uLevel * 0.20));
   }
 `;
 
@@ -168,7 +197,7 @@ function pointsMaterial(extra = {}) {
   return new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 }, uBass: { value: 0 }, uMid: { value: 0 }, uTreble: { value: 0 },
-      uLevel: { value: 0 }, uSwirl: { value: 0.08 }, uExpand: { value: 1 }, uPixel: { value: 1 },
+      uLevel: { value: 0 }, uSwirl: { value: 0.08 }, uExpand: { value: 1 }, uPixel: { value: 1 }, uInflow: { value: 0 },
       ...extra,
     },
     vertexShader: VERT_POINTS,
@@ -323,7 +352,7 @@ export class VisualEngine {
       g.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
       g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
       g.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
-      this.dustMat = pointsMaterial({ uSwirl: { value: 0.02 }, uExpand: { value: 0.55 } });
+      this.dustMat = pointsMaterial({ uSwirl: { value: 0.02 }, uExpand: { value: 0.55 }, uInflow: { value: 1 } });
       this.dustMat.uniforms.uPixel.value = dpr;
       this.dust = new THREE.Points(g, this.dustMat);
       this.scene.add(this.dust);
@@ -739,6 +768,11 @@ export class VisualEngine {
         if (a < 0.15) continue;
         const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
         if (lum < 0.055) continue;
+        // 熵增：越靠边角的像素越容易被"吃掉"，轮廓因此不是一条直线
+        const cx = Math.abs(x - W / 2) / (W / 2);
+        const cy = Math.abs(y - H / 2) / (H / 2);
+        const rn0 = Math.max(cx, cy);
+        if (rn0 > 0.80 && Math.random() < (rn0 - 0.80) / 0.20 * 0.62) continue;
         // 亚像素抖动 + 更明显的弧面 → 既有细节又有体积，且不像"整齐的格子"
         const X = (x - W / 2 + 0.5 + (Math.random() - 0.5)) * px;
         const Y = -(y - H / 2 + 0.5 + (Math.random() - 0.5)) * px;
@@ -769,6 +803,7 @@ export class VisualEngine {
       uniforms: {
         uTime: { value: 0 }, uBass: { value: 0 }, uMid: { value: 0 }, uTreble: { value: 0 },
         uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 0.50 },
+        uHalfW: { value: COVER_W * 0.5 }, uEntropy: { value: 1.0 },
       },
       vertexShader: VERT_COVER,
       fragmentShader: FRAG_COVER,
