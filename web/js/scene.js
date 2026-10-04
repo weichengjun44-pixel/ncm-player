@@ -261,6 +261,7 @@ export class VisualEngine {
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.FogExp2(0x000000, 0.0024);   // 很淡的雾：只压远处，不发灰
     this.camera = new THREE.PerspectiveCamera(56, window.innerWidth / window.innerHeight, 0.1, 4000);
+    this.scene.add(this.camera);   // 相机入场景图：MV 平面要挂在相机下（固定在视野正中）
 
     // ---- 深空星场（三层景深：近/中/远，转动时视差明显）----
     {
@@ -421,7 +422,7 @@ export class VisualEngine {
       this.videoCtx = this.videoCanvas.getContext('2d', { willReadFrequently: true });
 
       const N = this.VW * this.VH;
-      const planeW = 480;                  // 铺满整个空间背景（远超盒体 220、封面 74）
+      const planeW = 300;                  // 挂相机前 260 处，铺满视口（视口在 260 处约 287 单位宽）
       const planeH = planeW * (this.VH / this.VW);
       const pos = new Float32Array(N * 3);
       const col = new Float32Array(N * 3);   // 每帧刷新
@@ -436,7 +437,7 @@ export class VisualEngine {
           pos[i * 3 + 1] = -(y - this.VH / 2 + 0.5) * cellH + (Math.random() - 0.5) * cellH * 0.7;
           pos[i * 3 + 2] = (Math.random() - 0.5) * 2.5;
           seed[i] = Math.random();
-          size[i] = 2.0 + Math.random() * 1.0;   // 点径加大 → 画面更"实"、少噪点，MV 才看得清
+          size[i] = 2.6 + Math.random() * 1.0;   // 点径再加大 → 画面更"实"（点数几乎盖满格子）
         }
       }
       const g = new THREE.BufferGeometry();
@@ -454,7 +455,7 @@ export class VisualEngine {
         const e = Math.max(nx, ny);
         // 边缘渐隐 + 中央柔和减光（封面占 MV 宽度的约 22%，这里对正中 30% 区压暗到一半，
         // 否则视频较亮的镜头会把封面粒子冲淡——两者都能看清才是目标）
-        const central = 0.12 + 0.88 * Math.min(1, e / 0.20);  // 封面正后压到 12%：MV 再亮也不糊封面
+        const central = 0.12 + 0.88 * Math.min(1, Math.max(0, (e - 0.30) / 0.12));  // 封面范围(≤0.30)只留 12%，外圈迅速全亮
         this.videoFade[i] = (1 - Math.min(1, Math.max(0, (e - 0.82) / 0.18)) ** 1.5) * central;
       }
       this.videoGeo = g;
@@ -463,8 +464,8 @@ export class VisualEngine {
       this.videoPoints = new THREE.Points(g, this.videoMat);
       this.videoPoints.frustumCulled = false;
       this.videoPoints.visible = false;
-      this.videoPoints.position.set(0, 0, -120);     // 再退远一层：作为空间背景，前景更清爽
-      this.scene.add(this.videoPoints);
+      this.videoPoints.position.set(0, 0, -260);     // 相机坐标系：永远在视野正中，转视角也不动
+      this.camera.add(this.videoPoints);             // 挂相机 → 固定视角正中（不是世界坐标）
       this.videoLast = 0;
       this.videoUrl = null;
       this.videoAlpha = 1.35;              // MV 亮度系数（用户要求"更亮、清晰可见"；封面正后另有 88% 减光保护封面）

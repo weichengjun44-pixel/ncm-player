@@ -792,6 +792,15 @@ if (new URLSearchParams(location.search).has('probe')) {
       }, 3000);
     }
 
+    // 诊断：20 秒后把视角转 60°、抬升一点 → 验证 MV 是否仍固定在视野正中（封面应随视角偏移）
+    if (stageId) {
+      setTimeout(() => {
+        const v = window.__ncm.visual.view;
+        v.theta = Math.PI / 2 + 1.05;
+        v.phi = Math.PI / 2 - 0.35;
+      }, 20000);
+    }
+
     // ---- 自截图回传：每 4 秒把画面 POST 回服务端（存 shots/latest.png），便于直接看渲染结果 ----
     let shotN = 0;
     const stageEl = document.getElementById('stage');
@@ -800,7 +809,7 @@ if (new URLSearchParams(location.search).has('probe')) {
     setInterval(() => {
       try {
         const u = stageEl.toDataURL('image/png');
-        const tag = 'a' + String((window.__ncm && window.__ncm.visual.videoAlpha) || 0).replace('.', '');
+        const tag = 's' + String(shotN + 1).padStart(2, '0');
         fetch('/__shot?tag=' + tag, { method: 'POST', body: u })
           .then((r) => r.json())
           .then((j) => {
