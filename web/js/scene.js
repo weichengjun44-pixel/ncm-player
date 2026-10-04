@@ -6,7 +6,6 @@
  *   2. 节拍追踪     低音冲击把粒子推出去，随后回位（追踪本体的弹簧感）
  *   3. 盒子空间     粒子在发光线框盒子中央，四周深空星场，内壁有浮尘
  *   4. 可转动视角   拖拽 = 360° 环绕，滚轮 = 推拉，松手带惯性，闲置自动慢转
- *   5. 频谱光环     128 段径向粒子，贴在盒子内
  *   6. 后期处理     UnrealBloom 泛光 + 指数雾（纵深）
  *
  * 数据来源：Web Audio AnalyserNode（由 app.js 传入）
@@ -19,7 +18,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const BANDS = 128;
 const BOX = 110;                 // 盒子半边长（再次放大 → 空间更辽阔）
-const COVER_W = 56;             // 封面粒子平面宽度
+const COVER_W = 66;             // 封面粒子平面宽度（放大一点，细节更看得清）
 const LYRIC_W = 64;             // 歌词粒子平面宽度
 const IVORY = new THREE.Color('#fff3e2');    // 星尘主色：暖白（不是冷白）
 const AMBER = new THREE.Color('#ffb35c');    // 琥珀：暖色点缀
@@ -122,7 +121,7 @@ const FRAG_COVER = /* glsl */ `
     float m = smoothstep(0.5, 0.30, d);          // 边缘更硬 → 细节更锐（软边会糊成一团光）
     if (m <= 0.004) discard;
     // 亮度压到 0.42：现在粒子密度翻倍，叠加后如果还按 0.62 会过曝白掉
-    gl_FragColor = vec4(vColor * (0.50 + uLevel * 0.30), m * vAlpha * (0.34 + 0.44 * clamp(uMorph,0.0,1.0) + uLevel * 0.22));
+    gl_FragColor = vec4(vColor * (0.40 + uLevel * 0.26), m * vAlpha * (0.26 + 0.36 * clamp(uMorph,0.0,1.0) + uLevel * 0.20));
   }
 `;
 
@@ -266,7 +265,7 @@ export class VisualEngine {
 
     // ---- 盒子：只留内壁浮尘（边界线按需求隐藏，空间感靠雾与浮尘）----
     {
-      const N = 4200;
+      const N = 2400;
       const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
       const seed = new Float32Array(N), size = new Float32Array(N);
       const c = new THREE.Color();
@@ -302,7 +301,7 @@ export class VisualEngine {
 
     // ---- 盒内体积浮尘：填满内部空间，转动时视差最强，是"空间延伸感"的主力 ----
     {
-      const N = 22000;
+      const N = 10000;                     // 按需求降低浮尘密度（它也是灰雾感的来源）
       const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
       const seed = new Float32Array(N), size = new Float32Array(N);
       const c = new THREE.Color();
@@ -337,30 +336,10 @@ export class VisualEngine {
     this.core.scale.setScalar(18);
     this.scene.add(this.core);
 
-    // ---- 频谱光环 ----
-    {
-      const N = BANDS * 4;
-      const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
-      const seed = new Float32Array(N), size = new Float32Array(N);
-      for (let i = 0; i < N; i++) {
-        const b = Math.floor(i / 4);
-        const c = new THREE.Color().setHSL((0.80 + (b / BANDS) * 0.40) % 1, 0.82, 0.60);
-        col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
-        seed[i] = Math.random();
-        size[i] = 1.5 + (i % 4) * 0.5;
-      }
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      g.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
-      g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
-      g.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
-      this.haloMat = pointsMaterial({ uSwirl: { value: 0.05 }, uExpand: { value: 0.35 } });
-      this.haloMat.uniforms.uPixel.value = dpr;
-      this.halo = new THREE.Points(g, this.haloMat);
-      this.halo.frustumCulled = false;
-      this.scene.add(this.halo);
-      this.haloPos = g.attributes.position;
-    }
+    // ---- 频谱光环：按需求已删除（原来绕着封面的那圈粒子环）----
+    this.halo = null;
+    this.haloMat = null;
+    this.haloPos = null;
 
     // ---- 节拍涟漪池 ----
     this.ripples = [];
@@ -512,7 +491,7 @@ export class VisualEngine {
   }
 
   updateHalo() {
-    if (!this.freq) return;
+    if (!this.freq || !this.haloPos) return;      // 光环已删除
     const arr = this.haloPos.array;
     const usable = Math.floor(this.freq.length * 0.82);
     const step = Math.max(1, Math.floor(usable / BANDS));
@@ -714,7 +693,7 @@ export class VisualEngine {
 
   /* ---------------------------------------------------------- 封面 → 粒子 */
   /** 把专辑封面采样成粒子云；换歌时从远处飞回来重组（morph 0→1） */
-  async setCoverToParticles(url, { width = 256 } = {}) {
+  async setCoverToParticles(url, { width = 288 } = {}) {
     if (!url) { this.clearCover(); return; }
     let img;
     try {
@@ -789,7 +768,7 @@ export class VisualEngine {
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 }, uBass: { value: 0 }, uMid: { value: 0 }, uTreble: { value: 0 },
-        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 0.80 },
+        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 0.72 },
       },
       vertexShader: VERT_COVER,
       fragmentShader: FRAG_COVER,
@@ -890,7 +869,7 @@ export class VisualEngine {
       }
     }
 
-    for (const m of [this.starMat, this.wallMat, this.haloMat, this.dustMat]) {
+    for (const m of [this.starMat, this.wallMat, this.dustMat]) {
       m.uniforms.uTime.value = this.time;
       m.uniforms.uBass.value = bass;
       m.uniforms.uMid.value = mid;
