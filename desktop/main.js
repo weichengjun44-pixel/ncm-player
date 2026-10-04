@@ -135,8 +135,15 @@ async function boot() {
     log(`端口 ${PORT} 已有实例在跑，直接复用（开发时你自己的服务就占着它）`);
   }
 
-  if (!(await portInUse(API_PORT))) startApiService();
-  else log(`端口 ${API_PORT} 已有网易云 API，直接复用`);
+  if (!(await portInUse(API_PORT))) {
+    startApiService();
+    // 等 API 真的起来再开窗。不等的后果实测过：窗口 1 秒就弹出来，
+    // 而 API 还在启动 → 前端首屏拉歌单失败，直接显示"API 未就绪"，很像坏了
+    const apiUp = await waitPort(API_PORT, 30000);
+    log(apiUp ? `网易云 API 已就绪（:${API_PORT}）` : `⚠ 网易云 API 30s 未就绪，先开窗（QQ/酷狗 不受影响）`);
+  } else {
+    log(`端口 ${API_PORT} 已有网易云 API，直接复用`);
+  }
 
   createWindow();
   log('窗口已就绪 →', `http://127.0.0.1:${PORT}/`);

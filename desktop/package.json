@@ -53,7 +53,9 @@
           ]
         }
       ],
-      "artifactName": "NEBULA-Setup-${version}.${ext}"
+      "artifactName": "NEBULA-Setup-${version}.${ext}",
+      "signAndEditExecutable": false,
+      "verifyUpdateCodeSignature": false
     },
     "nsis": {
       "oneClick": false,
@@ -69,7 +71,8 @@
     }
   },
   "devDependencies": {
-    "electron": "^33.4.11"
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
   },
   "allowScripts": {
     "electron@33.4.11": true

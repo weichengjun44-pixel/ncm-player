@@ -283,3 +283,35 @@ export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
 npm install-scripts approve electron       # 放行 postinstall
 npm rebuild electron --foreground-scripts  # 重新触发下载
 ```
+
+### 打包成安装包
+
+```bash
+bash desktop/build-win.sh          # 一步到位（装构建器 → 打包 → 列出产物）
+# 或
+cd desktop && npm run dist
+```
+
+`build-win.sh` 里那几个环境变量不是可选项，缺了就会卡在下载：
+
+| 变量 | 作用 | 不设的后果 |
+|---|---|---|
+| `ELECTRON_MIRROR` | electron 运行时二进制 | 从 GitHub 拉，失败 |
+| `ELECTRON_BUILDER_BINARIES_MIRROR` | NSIS / winCodeSign 等辅助二进制 | 从 GitHub 拉，失败 |
+| `CSC_IDENTITY_AUTO_DISCOVERY=false` | 跳过代码签名 | 没证书还去要签名，多下载且报错 |
+| `ELECTRON_CACHE` / `ELECTRON_BUILDER_CACHE` | 下载缓存放 D 盘 | 落在 C 盘用户目录 |
+
+镜像地址（实测可用）：`https://registry.npmmirror.com/-/binary/electron-builder-binaries/`
+（注意不是 `npmmirror.com/mirrors/...`，那个会 302 到失败）
+
+产物：
+
+```
+dist/
+  NEBULA-Setup-0.1.0.exe    ← 安装包（NSIS，可选安装目录）
+  win-unpacked/NEBULA.exe   ← 免安装版，直接双击就能跑（验证/自用推荐）
+```
+
+**体积优化（待做）**：`api/` 目录 188M，其中一半是开发依赖
+（typescript 23M、prettier 9.7M、eslint 相关…），运行时用不到。
+打包前 `cd api && npm prune --omit=dev` 可以显著瘦身。
