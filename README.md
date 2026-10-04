@@ -495,3 +495,22 @@ bash android/build.sh             # 出 android/build/NEBULA.apk
 - 判断"APK 能不能装"要验四件事：`apksigner verify`（签名）、`aapt2 dump badging` 里有
   `launchable-activity`（否则装了点不开）、`resources.arsc` 是 STORED、以及**从公网下载回来做 sha256 比对**
   （截断的安装包是最坑的失败方式）。
+
+### 部署到服务器：白名单，不要用排除法
+
+`services/deploy-to-server.sh`（打包→自检→传输→解压→核对，全程带验证）。
+
+**为什么是白名单**：部署时用 `tar --exclude='./node_modules'` 想排掉根目录的 Electron 构建残留，
+结果把运行必需的 `node_modules/three` 一起排掉了。中间层把 `/vendor/three/*` 映射到它，
+前端 importmap 又指向 `three` —— 于是模块图断掉，而**浏览器只报最外层 `js/app.js 加载失败`**，
+用户看到的是"资源加载失败 + 启动卡住"，真正原因藏了两层。
+搬运清单必须显式列出要带什么，不能靠排除规则。
+
+### 查这类问题：递归检查模块图
+
+`services/check-module-graph.py [base_url]` —— 从 index.html 出发递归解析所有 `import`，
+逐层抓取并报告任何 404，不受浏览器缓存干扰（手机上没有控制台，这是最快的定位手段）。
+
+写这个检查器时自己踩了一个坑：**importmap 是「最长前缀优先」**，我一开始按字典顺序匹配，
+`three/addons/x` 被 `three` 抢走，拼成了 `three.module.js/addons/x`，得到 4 个假 404。
+检查器本身也必须守规范，否则会带着错误的结论往下走。

@@ -136,7 +136,20 @@ public class MainActivity extends Activity {
                     }
                 });
         if (showCancel) {
+            // 后端更新后，手机可能还拿着旧的页面/脚本 —— 给一个一键清缓存的入口，
+            // 比让用户去系统设置里翻"清除数据"友好得多。
             b.setNegativeButton("取消", null);
+            b.setNeutralButton("清除缓存重载", new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface d, int w) {
+                    if (web != null) {
+                        web.clearCache(true);
+                        web.clearHistory();
+                    }
+                    Toast.makeText(MainActivity.this, "已清除缓存，正在重载…", Toast.LENGTH_SHORT).show();
+                    open();
+                }
+            });
         } else {
             b.setCancelable(false);
         }
