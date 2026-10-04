@@ -210,6 +210,8 @@ function pointsMaterial(extra = {}) {
 /* MV 跟随用的临时对象 */
 const _mvTarget = new THREE.Vector3();
 const _mvOff = new THREE.Vector3();
+const _mvAxis = new THREE.Vector3();
+const _mvQuat = new THREE.Quaternion();
 
 /* 取色用的临时对象（避免每像素 new） */
 const _tmpSrc = new THREE.Color();
@@ -982,27 +984,27 @@ export class VisualEngine {
     if (!vp || !vp.visible) return;
     const cam = this.camera;
 
-    // 目标位姿：相机前方 260，朝向与相机一致
+    // 位置：跟得紧一点，只留很小的滞后（原先 5.0/115 太大，像没跟上）
     _mvTarget.set(0, 0, -260).applyQuaternion(cam.quaternion).add(cam.position);
-    vp.position.lerp(_mvTarget, 1 - Math.exp(-dt * 5.0));
-    vp.quaternion.slerp(cam.quaternion, 1 - Math.exp(-dt * 6.5));
+    vp.position.lerp(_mvTarget, 1 - Math.exp(-dt * 12.0));
 
-    // 限制最大偏离：猛拉视角时背景不至于飞出画面
-    const MAX_LAG = 115;
+    const MAX_LAG = 45;                                  // 最大甩出距离：小一点，跟手
     _mvOff.copy(vp.position).sub(_mvTarget);
     const off = _mvOff.length();
     if (off > MAX_LAG) vp.position.copy(_mvTarget).add(_mvOff.multiplyScalar(MAX_LAG / off));
 
-    // 滚转：由相机的"实际转动角速度"驱动（不依赖内部拖拽变量，任何方式转视角都有效）。
-    // 转得越快歪得越明显，停手后被上面的 slerp 自动拉回。
+    // 朝向：直接对齐相机（关键——不用 slerp 累积，否则越转越歪，最后整块翻过来）。
+    // 只额外叠一个很小的滚转（绕视线轴），转得快时轻微倾斜，停手即回正。
     const v = this.view;
     const dTheta = v.theta - (this._prevTheta === undefined ? v.theta : this._prevTheta);
     const dPhi = v.phi - (this._prevPhi === undefined ? v.phi : this._prevPhi);
     this._prevTheta = v.theta;
     this._prevPhi = v.phi;
-    const angVel = (dTheta + dPhi * 0.6) / Math.max(dt, 1e-4);        // rad/s
-    const roll = Math.max(-0.30, Math.min(0.30, -angVel * 0.16));
-    vp.rotateZ(roll * dt * 12);
+    const angVel = (dTheta + dPhi * 0.6) / Math.max(dt, 1e-4);      // rad/s
+    const targetRoll = Math.max(-0.10, Math.min(0.10, -angVel * 0.012));
+    this._mvRoll = (this._mvRoll || 0) + (targetRoll - (this._mvRoll || 0)) * (1 - Math.exp(-dt * 9));
+    _mvQuat.setFromAxisAngle(_mvAxis.set(0, 0, 1), this._mvRoll);   // 绕视线轴滚转（屏幕内旋转）
+    vp.quaternion.copy(cam.quaternion).multiply(_mvQuat);          // 绝对对齐，永不累积偏移
   }
 
   debugInfo() {
