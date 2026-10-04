@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>NEBULA · 粒子音乐空间</title>
+<meta name="theme-color" content="#05060f" />
+<link rel="stylesheet" href="./css/style.css" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "/vendor/three/build/three.module.js",
+    "three/addons/": "/vendor/three/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <!-- 3D 舞台 -->
+  <canvas id="stage"></canvas>
+
+  <!-- 加载遮罩 -->
+  <div id="boot" class="boot">
+    <div class="boot-orb"></div>
+    <p>正在进入音乐空间…</p>
+  </div>
+
+  <!-- 顶部 -->
+  <header class="hud top">
+    <div class="brand">
+      <span class="dot"></span>
+      <b>NEBULA</b><i>粒子音乐空间</i>
+    </div>
+    <form id="searchForm" class="search" autocomplete="off">
+      <input id="q" type="search" placeholder="搜索歌曲 / 歌手 / 专辑…" aria-label="搜索" />
+      <button type="submit" aria-label="搜索">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path d="M10 2a8 8 0 105.29 14.01l4.35 4.35 1.42-1.42-4.35-4.35A8 8 0 0010 2zm0 2a6 6 0 110 12 6 6 0 010-12z" fill="currentColor"/></svg>
+      </button>
+    </form>
+  </header>
+
+  <!-- 左侧列表 -->
+  <aside class="panel" id="panel">
+    <div class="panel-head">
+      <span id="panelTitle">搜索结果</span>
+      <button id="panelToggle" class="ghost" title="收起/展开">−</button>
+    </div>
+    <div id="list" class="list"></div>
+    <div class="panel-foot">
+      <label class="file">
+        <input id="lrcFile" type="file" accept=".lrc,text/plain" hidden />
+      </label>
+    </div>
+  </aside>
+
+  <!-- 中央信息 + 歌词 -->
+  <section class="center" id="center">
+    <div id="lyricNow" class="lrc-now"></div>
+    <div id="lyricNext" class="lrc-next"></div>
+  </section>
+
+  <!-- 底部控制台 -->
+  <footer class="hud bottom">
+    <div class="now" id="now">
+      <div class="cover" id="coverBox"><img id="cover" alt="" /></div>
+      <div class="meta">
+        <div class="t" id="title">还没有播放</div>
+        <div class="s" id="artist">在上面搜索一首歌开始</div>
+      </div>
+    </div>
+
+    <div class="transport">
+      <div class="btns">
+        <button id="prev" class="ctl" title="上一首 (←)">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M6 5h2v14H6zm12 0v14l-9-7 9-7z" fill="currentColor"/></svg>
+        </button>
+        <button id="play" class="ctl main" title="播放/暂停 (空格)">
+          <svg id="icoPlay" viewBox="0 0 24 24" width="26" height="26"><path d="M8 5v14l11-7-11-7z" fill="currentColor"/></svg>
+          <svg id="icoPause" viewBox="0 0 24 24" width="26" height="26" style="display:none"><path d="M7 5h4v14H7zm6 0h4v14h-4z" fill="currentColor"/></svg>
+        </button>
+        <button id="next" class="ctl" title="下一首 (→)">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M16 5h2v14h-2zM6 5l9 7-9 7z" fill="currentColor"/></svg>
+        </button>
+      </div>
+
+      <div class="bar-row">
+        <span id="cur" class="time">0:00</span>
+        <div class="bar" id="bar"><div class="bar-bg"></div><div id="fill" class="fill"></div><div id="knob" class="knob"></div></div>
+        <span id="dur" class="time">0:00</span>
+      </div>
+    </div>
+
+    <div class="right">
+      <div class="vol">
+        <svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/></svg>
+        <input id="vol" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="音量" />
+      </div>
+      <div class="pills">
+        <button id="mode" class="pill" title="播放模式">列表循环</button>
+        <button id="level" class="pill" title="音质">极高</button>
+        <button id="vis" class="pill" title="切换视觉模式">星云</button>
+      </div>
+    </div>
+  </footer>
+
+  <!-- 提示 -->
+  <div id="toast" class="toast"></div>
+
+  <audio id="audio" preload="metadata"></audio>
+  <script>
+    /* 前端兜底：任何脚本/资源错误都在页面上直接显示，方便排查 */
+    (function () {
+      function show(msg) {
+        var b = document.getElementById('errbar');
+        if (!b) {
+          b = document.createElement('div');
+          b.id = 'errbar';
+          b.className = 'errbar';
+          b.addEventListener('click', function () { b.style.display = 'none'; });
+          document.body.appendChild(b);
+        }
+        b.textContent = '⚠ ' + msg + '   （点击关闭）';
+        b.style.display = 'block';
+      }
+      window.addEventListener('error', function (e) {
+        if (e && e.message) {
+          var f = e.filename ? e.filename.split('/').pop() + ':' + e.lineno : '';
+          show(e.message + '  ' + f);
+        } else if (e && e.target && (e.target.src || e.target.href)) {
+          show('资源加载失败: ' + (e.target.src || e.target.href));
+        }
+      }, true);
+      window.addEventListener('unhandledrejection', function (e) {
+        var r = e && e.reason;
+        show('异步异常: ' + ((r && (r.message || r)) || 'unknown'));
+      });
+    })();
+  </script>
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

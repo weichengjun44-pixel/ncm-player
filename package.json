@@ -1,0 +1,10 @@
+{
+  "name": "ncm-particle-player",
+  "private": true,
+  "version": "0.1.0",
+  "type": "commonjs",
+  "description": "网易云音乐流式播放器：Three.js 粒子 / 空间感可视化",
+  "dependencies": {
+    "three": "^0.180.0"
+  }
+}
