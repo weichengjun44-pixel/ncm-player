@@ -83,3 +83,21 @@ ssh desk "Get-Content D:\nebula\.tunnel-url"
 5. **SSH 到 Windows**：默认 shell 是 PowerShell（cmd 语法报错）、二进制 stdin 会损坏
    （用 scp 传文件）、stdout 编码不可靠（**让远端写文件再 scp 取回**最稳）。
    另外 `Start-Process` 起的进程会随 SSH 会话被带走 —— 要脱离会话就用计划任务。
+
+## 六、本机清理记录（2026-10-04 深夜，释放 2217 MB）
+
+**已清（都确认服务器有 / 可重建）**：安卓工具链 759M（服务器 D:\Apps 有，那边能构建 APK）、
+安装包缓存 329M、免安装版 win-unpacked 379M（可由源码重建）、Electron 构建树 557M、
+根目录 Electron 残留 ~3M、日志 44M、探针截图 213M、会话临时文件 20M。
+
+**⚠ 有一件事没做完**：桌面版安装包 `dist/NEBULA-Setup-0.1.0.exe`（126M）**尚未送达服务器**
+—— 传输时 ZeroTier 链路中断（`10.122.193.15` 无响应），按"先确认送到才清"的原则**保留在本机**。
+**链路恢复后先传到服务器 `D:
+ebula\_archive\`，再删本机这一份。**
+
+**保留未动**：项目源码与 .git、api 依赖、three.js、cloudflared（本机回退用）、
+Hermes 工作环境全部（配置/技能/插件/会话/记忆只清 cache/scratch）。
+
+**验证**：Hermes 配置/技能/插件/会话/记忆完好、node 可用、系统目录未动、播放器三项均 200。
+
+**注意**：清理时 ZeroTier（`ssh desk`）不通，但播放器走的是公网隧道，**手机使用不受影响**。
