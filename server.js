@@ -18,6 +18,7 @@ const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
 const { Readable } = require('node:stream');
+const { PROVIDERS } = require('./sources');
 
 const PORT = Number(process.env.PORT || 8080);
 const API_BASE = process.env.API_BASE || 'http://127.0.0.1:3000';
@@ -201,27 +202,35 @@ async function proxyStream(req, res, url) {
   if (!info) return send(res, 404, '该歌曲没有可播放地址（可能需要登录或版权受限）');
   const src = info.url;
 
+  // 网易云 CDN 对 flac 也会报 audio/mpeg，按实际格式纠正，否则浏览器可能拒播
+  return void pipeMedia(req, res, src, AUDIO_MIME[info.type], {
+    referer: 'https://music.163.com/',
+    extraHeaders: { 'X-Audio-Type': info.type || '', 'X-Audio-Bitrate': String(info.br || '') },
+  });
+}
+
+/** 抓上游媒体（音频/视频）并转发，带 Range 支持。网易云与 QQ/酷狗 共用这一份。 */
+async function pipeMedia(req, res, src, mime, opts) {
+  const o = opts || {};
   const headers = {
     'User-Agent':
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36',
-    Referer: 'https://music.163.com/',
+    Referer: o.referer || 'https://music.163.com/',
     Accept: '*/*',
+    ...(o.extraHeaders || {}),
   };
   if (req.headers.range) headers.Range = req.headers.range;
 
   try {
     const upstream = await fetch(src, { headers, redirect: 'follow' });
     if (!upstream.ok && upstream.status !== 206) {
-      return send(res, 502, '音频源返回 ' + upstream.status);
+      return send(res, 502, '媒体源返回 ' + upstream.status);
     }
     const outHeaders = {
-      // 网易云 CDN 对 flac 也会报 audio/mpeg，这里按实际格式纠正，否则浏览器可能拒播
-      'Content-Type': AUDIO_MIME[info.type] || upstream.headers.get('content-type') || 'audio/mpeg',
+      'Content-Type': mime || upstream.headers.get('content-type') || 'audio/mpeg',
       'Accept-Ranges': 'bytes',
       'Access-Control-Allow-Origin': '*',
       'Cache-Control': 'no-store',
-      'X-Audio-Type': info.type || '',
-      'X-Audio-Bitrate': String(info.br || ''),
     };
     const len = upstream.headers.get('content-length');
     const range = upstream.headers.get('content-range');
@@ -235,8 +244,77 @@ async function proxyStream(req, res, url) {
       } catch {}
     });
   } catch (err) {
-    log('音频转发失败:', err.message);
+    log('媒体转发失败:', err.message);
     if (!res.headersSent) send(res, 502, 'stream failed: ' + err.message);
+  }
+}
+
+/* --------------------------------------------------- 多音源（QQ / 酷狗）
+   设计：把 QQ/酷狗 的数据在中间层翻译成"网易云的数据结构"再返回。
+   这样前端（搜索列表、播放、歌词、粒子封面）整套逻辑不用分叉——
+   比让前端判断每个源要可靠得多，也正好符合"效果和接入网易云一样"的目标。
+
+   已知限制：QQ/酷狗的**原版付费曲**取不到流（会返回明确的业务错误，前端提示换一首），
+   翻唱 / Live / 版本曲可以；MV 暂未接入（QQ 的 MV 模块名未探通、酷狗是 m3u8 需 hls.js）。 */
+
+const sourceOf = function (url) {
+  return String(url.searchParams.get('source') || 'netease').toLowerCase();
+};
+
+async function handleSource(req, res, url, src) {
+  const p = url.pathname;
+  const prov = PROVIDERS[src];
+  if (!prov) return sendJson(res, 400, { error: 'unknown source: ' + src });
+  try {
+    if (p === '/api/search') {
+      const kw = url.searchParams.get('keywords') || '';
+      const limit = Number(url.searchParams.get('limit') || 30);
+      const songs = await prov.search(kw, 1, limit);
+      return sendJson(res, 200, { result: { songs, songCount: songs.length }, source: src });
+    }
+    if (p === '/api/lyric') {
+      const id = url.searchParams.get('id');
+      const duration = url.searchParams.get('duration') || 0;
+      const l = await prov.lyric(id, duration);
+      return sendJson(res, 200, {
+        lrc: { lyric: l.lrc }, tlyric: { lyric: l.trans || '' },
+        source: src, hasTimeTag: l.hasTimeTag,
+      });
+    }
+    if (p === '/api/playlist/detail') {
+      const id = url.searchParams.get('id') || (src === 'qq' ? '26' : '8888');
+      const tracks = await prov.chart(id, 60);
+      const nm = src === 'qq' ? 'QQ 音乐 · 榜单' : '酷狗 · 榜单';
+      return sendJson(res, 200, {
+        playlist: {
+          id: String(id), name: nm + ' ' + id, tracks, trackCount: tracks.length,
+          coverImgUrl: (tracks[0] && tracks[0].al && tracks[0].al.picUrl) || '',
+        },
+        source: src,
+      });
+    }
+  } catch (e) {
+    log('[' + src + '] ' + p + ' 失败: ' + e.message);
+    return sendJson(res, 502, { error: e.message, source: src });
+  }
+  return sendJson(res, 404, { error: 'not found', source: src });
+}
+
+/** QQ/酷狗 取流：先解析真实直链，再走同一套转发。
+    注意它们是**有时效的签名直链**，必须每次现取，不能缓存。 */
+async function streamFromSource(req, res, url, src) {
+  const id = url.searchParams.get('id');
+  if (!id) return send(res, 400, 'missing id');
+  const prov = PROVIDERS[src];
+  try {
+    const info = await prov.songUrl(id);
+    return void pipeMedia(req, res, info.url, info.mime, {
+      referer: src === 'qq' ? 'https://y.qq.com/' : 'https://www.kugou.com/',
+    });
+  } catch (e) {
+    // 付费/版权受限走这里：把原因原样告诉前端，前端好提示"换一首"
+    log('[' + src + '] 取流失败: ' + e.message);
+    return send(res, 502, e.message);
   }
 }
 
@@ -429,8 +507,25 @@ const server = http.createServer((req, res) => {
     if (p.startsWith('/api/login/') || p === '/api/logout' || p === '/api/me/playlists') {
       return void handleAuth(req, res, url, p);
     }
+    if (p === '/api/sources') {
+      return sendJson(res, 200, {
+        sources: [
+          { id: 'netease', name: '网易云音乐' },
+          { id: 'qq', name: 'QQ 音乐' },
+          { id: 'kugou', name: '酷狗音乐' },
+        ],
+      });
+    }
+    // 非网易云的源在中间层直接处理（网易云那套照旧走 3000 端口的 API 服务）
+    if (sourceOf(url) !== 'netease'
+        && (p === '/api/search' || p === '/api/lyric' || p === '/api/playlist/detail')) {
+      return void handleSource(req, res, url, sourceOf(url));
+    }
+    if (p === '/stream') {
+      if (sourceOf(url) !== 'netease') return void streamFromSource(req, res, url, sourceOf(url));
+      return void proxyStream(req, res, url);
+    }
     if (p.startsWith('/api/')) return void proxyApi(req, res, url);
-    if (p === '/stream') return void proxyStream(req, res, url);
     if (p === '/mv') return void proxyMv(req, res, url);
     if (p === '/cover') return void proxyCover(req, res, url);
     if (p === '/__shot' && req.method === 'POST') return void handleShot(req, res, url);

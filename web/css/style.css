@@ -387,3 +387,31 @@ button.ghost:hover { color: var(--accent); border-color: rgba(255, 196, 107, 0.4
   .brand i { display: none; }
   .search input { width: 46vw; }
 }
+
+
+/* ---------- 音源切换（网易云 / QQ / 酷狗） ---------- */
+.src-row {
+  display: flex;
+  gap: 6px;
+  padding: 10px 14px 4px;
+}
+.src-pill {
+  flex: 1;
+  padding: 6px 4px;
+  font-size: 12px;
+  letter-spacing: .02em;
+  color: var(--muted-foreground, #8a8f98);
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color .18s, background .18s, border-color .18s;
+  font-family: inherit;
+}
+.src-pill:hover { color: #e8e8ec; background: rgba(255, 255, 255, .07); }
+.src-pill.active {
+  color: #fff;
+  background: rgba(143, 233, 255, .13);
+  border-color: rgba(143, 233, 255, .42);
+  box-shadow: 0 0 12px rgba(143, 233, 255, .12) inset;
+}

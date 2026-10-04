@@ -42,6 +42,7 @@ const state = {
   ctx: null,
   analyser: null,
   source: null,
+  musicSource: 'netease',   // 音源：netease / qq / kugou（state.source 已被 Web Audio 占用，别混）
   current: null,
   loggedIn: false,
   account: null,
@@ -143,6 +144,8 @@ function normalizeSong(s) {
       cover: s.al ? s.al.picUrl : '',
       duration: (s.dt || 0) / 1000,
       fee: s.fee,
+      source: s.source || 'netease',      // 网易云返回的对象没有 source → 默认 netease
+      mvId: s.mvId || '',
     };
   }
   const ar = (s.artists || []).map((a) => a.name);
@@ -184,7 +187,7 @@ function playIndex(i) {
     visual.clearCover();
   }
 
-  audio.src = `/stream?id=${song.id}&level=${LEVELS[state.level].k}`;
+  audio.src = `/stream?id=${song.id}&level=${LEVELS[state.level].k}${srcParam(song.source)}`;
   audio.play().then(updatePlayIcon).catch((err) => {
     toast('播放失败：' + (err.message || err.name), true);
   });
@@ -249,6 +252,7 @@ async function loadMv(songId) {
   if (!visual.detachVideo) return;
   visual.detachVideo();
   try {
+    if ((state.current?.source || 'netease') !== 'netease') return;   // QQ/酷狗 MV 未接入
     const d = await api(`/song/detail?ids=${songId}`);
     const mvid = d?.songs?.[0]?.mv;
     if (!mvid) return;                                   // 这首歌没有 MV
@@ -271,7 +275,7 @@ async function loadLyrics(id) {
   els.lrcNow.textContent = '';
   els.lrcNow.classList.remove('show');
   try {
-    const j = await api(`/lyric?id=${id}`);
+    const j = await api(`/lyric?id=${id}&duration=${Math.round((state.current?.duration || 0) * 1000)}${srcParam(state.current?.source)}`);
     const raw = (j.lrc && j.lrc.lyric) || '';
     const tl = (j.tlyric && j.tlyric.lyric) || '';
     const trans = parseLrc(tl);
@@ -413,7 +417,7 @@ function reloadCurrent() {
   if (!state.current) return;
   const keep = audio.currentTime;
   const playing = !audio.paused;
-  audio.src = `/stream?id=${state.current.id}&level=${LEVELS[state.level].k}`;
+  audio.src = `/stream?id=${state.current.id}&level=${LEVELS[state.level].k}${srcParam(state.current.source)}`;
   audio.addEventListener(
     'loadedmetadata',
     () => {
@@ -492,7 +496,7 @@ els.searchForm.addEventListener('submit', async (e) => {
   state.tab = 'search';
   els.list.innerHTML = '<div class="empty">搜索中…</div>';
   try {
-    const j = await api(`/search?keywords=${encodeURIComponent(kw)}&type=1&limit=30`);
+    const j = await api(`/search?keywords=${encodeURIComponent(kw)}&type=1&limit=30${srcParam()}`);
     const songs = (j.result?.songs || []).map(normalizeSong);
     state.queue = songs;
     renderList(`搜索：${kw}`, songs);
@@ -503,6 +507,80 @@ els.searchForm.addEventListener('submit', async (e) => {
     toast('搜索失败：' + err.message, true);
   }
 });
+
+/* ----------------------------------------------------------- 音源切换（网易云 / QQ / 酷狗）
+   网易云走本地 3000 端口的 API 服务；QQ 和酷狗由中间层直接对接上游并归一化成同样结构。
+   localStorage 记住选择；切源后重载当前面板内容，避免列表里的 id 混在两个源之间。 */
+const SRC_KEY = 'ncm.source';
+const SOURCES = [
+  { id: 'netease', name: '网易云' },
+  { id: 'qq', name: 'QQ 音乐' },
+  { id: 'kugou', name: '酷狗音乐' },
+];
+// QQ/酷狗 无法读到"我的歌单"（需要登录），用官方榜单顶上，保证面板里有内容可点
+const CHARTS = {
+  qq: [
+    { id: '26', name: 'QQ 音乐 · 热歌榜', count: 60, source: 'qq' },
+    { id: '4', name: 'QQ 音乐 · 飙升榜', count: 60, source: 'qq' },
+    { id: '27', name: 'QQ 音乐 · 新歌榜', count: 60, source: 'qq' },
+  ],
+  kugou: [
+    { id: '8888', name: '酷狗 · TOP500', count: 60, source: 'kugou' },
+    { id: '6666', name: '酷狗 · 热歌榜', count: 60, source: 'kugou' },
+    { id: '52144', name: '酷狗 · 飙升榜', count: 60, source: 'kugou' },
+  ],
+};
+
+/** 拼 source 查询参数：网易云不加（保持原来的调用形态，减少回归面） */
+function srcParam(source) {
+  const s = source || state.musicSource;
+  return s && s !== 'netease' ? '&source=' + s : '';
+}
+
+function buildSrcRow() {
+  const row = document.createElement('div');
+  row.id = 'srcRow';
+  row.className = 'src-row';
+  SOURCES.forEach((s) => {
+    const b = document.createElement('button');
+    b.className = 'src-pill' + (s.id === state.musicSource ? ' active' : '');
+    b.textContent = s.name;
+    b.dataset.src = s.id;
+    b.addEventListener('click', () => setSource(s.id));
+    row.appendChild(b);
+  });
+  return row;
+}
+
+function setSource(id) {
+  if (id === state.musicSource) return;
+  state.musicSource = id;
+  try { localStorage.setItem(SRC_KEY, id); } catch {}
+  document.querySelectorAll('#srcRow .src-pill').forEach((b) => {
+    b.classList.toggle('active', b.dataset.src === id);
+  });
+  const nm = (SOURCES.find((s) => s.id === id) || {}).name || id;
+  toast('已切到 ' + nm);
+  // 换源后当前队列的 id 属于旧源，清掉避免误播；面板按当前标签重载
+  state.queue = [];
+  state.index = -1;
+  if (state.tab === 'mine') loadMyPlaylists();
+  else els.list.innerHTML = '<div class="empty">已切到 ' + escapeHtml(nm) + '，搜一首歌吧</div>';
+}
+
+/* 启动时恢复音源 + 给面板里的切换按钮挂事件
+   注意：这段必须放在 SRC_KEY/SOURCES 定义**之后**，
+   否则 const 的暂时性死区会让整个模块抛错（踩过：整个 app 静默挂掉、连截图都不再产生） */
+(function bootSource() {
+  let savedSrc = 'netease';
+  try { savedSrc = localStorage.getItem(SRC_KEY) || 'netease'; } catch {}
+  if (!SOURCES.some((s) => s.id === savedSrc)) savedSrc = 'netease';
+  state.musicSource = savedSrc;
+  document.querySelectorAll('#srcRow .src-pill').forEach((b) => {
+    b.classList.toggle('active', b.dataset.src === savedSrc);
+    b.addEventListener('click', () => setSource(b.dataset.src));
+  });
+})();
 
 /* ----------------------------------------------------------- 扫码登录 */
 let qrTimer = null;
@@ -620,6 +698,31 @@ els.logoutBtn.addEventListener('click', async () => {
 
 /* ----------------------------------------------------------- 我的音乐（歌单） */
 async function loadMyPlaylists() {
+  // QQ / 酷狗 读不到"我的歌单"（要各家登录），用官方榜单顶上，面板里始终有东西可点
+  if (state.musicSource !== 'netease') {
+    const charts = CHARTS[state.musicSource] || [];
+    els.panelSub.textContent = '官方榜单（' + (SOURCES.find((s) => s.id === state.musicSource) || {}).name + '）';
+    els.list.innerHTML = '';
+    charts.forEach((pl, i) => {
+      const div = document.createElement('div');
+      div.className = 'item';
+      div.innerHTML = `
+        <span class="idx">${i + 1}</span>
+        <span class="txt">
+          <span class="n">${escapeHtml(pl.name)}</span>
+          <span class="a">${pl.count} 首</span>
+        </span>`;
+      div.addEventListener('click', () => openPlaylist(pl));
+      els.list.appendChild(div);
+    });
+    // 顺手提示一句能力边界，免得以为坏了
+    const tip = document.createElement('div');
+    tip.className = 'empty';
+    tip.style.marginTop = '10px';
+    tip.innerHTML = '提示：原版付费曲拿不到播放地址<br/>遇到会提示"需要付费"，换一首即可';
+    els.list.appendChild(tip);
+    return;
+  }
   els.list.innerHTML = '<div class="empty">读取你的歌单…</div>';
   els.panelSub.textContent = '';
   try {
@@ -657,7 +760,7 @@ async function openPlaylist(pl) {
   els.panelSub.textContent = `${pl.name} · 载入中…`;
   els.list.innerHTML = '<div class="empty">正在拉取《' + escapeHtml(pl.name) + '》…</div>';
   try {
-    const j = await api('/playlist/detail?id=' + pl.id);
+    const j = await api('/playlist/detail?id=' + pl.id + srcParam(pl.source || state.musicSource));
     const tracks = (j.playlist?.tracks || []).map(normalizeSong);
     if (!tracks.length) {
       els.list.innerHTML = '<div class="empty">这个歌单没有曲目</div>';
@@ -702,6 +805,20 @@ fitLayout();
 
 /* ----------------------------------------------------------- 探针（?probe=1） */
 if (new URLSearchParams(location.search).has('probe')) {
+          // 诊断：?src=qq&q=晴天&play=2 → 切音源、搜索、播第 N 首（端到端验证多音源）
+          { const q3 = new URLSearchParams(location.search);
+            const src = q3.get('src'), kw = q3.get('q'), play = Number(q3.get('play') || 0);
+            if (src) setTimeout(() => setSource(src), 900);
+            if (kw) setTimeout(() => {
+              document.getElementById('q').value = kw;
+              const f = document.getElementById('searchForm');
+              if (f && f.requestSubmit) f.requestSubmit();
+            }, 2200);
+            if (play > 0) setTimeout(() => {
+              const items = document.querySelectorAll('#list .item');
+              if (items[play - 1]) items[play - 1].click();
+            }, 6000);
+          }
   els.dbg.classList.add('show');
   const NL = String.fromCharCode(10);
   setTimeout(() => {
@@ -798,6 +915,7 @@ if (new URLSearchParams(location.search).has('probe')) {
           }, 16);
         }
       }
+
     }
 
     // 诊断用：直接点第 5 首（带 MV）→ 触发封面/歌词/MV 加载。
