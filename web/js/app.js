@@ -304,6 +304,13 @@ function tickLyrics() {
     const mid = (lo + hi) >> 1;
     if (state.lyrics[mid].time <= t) { idx = mid; lo = mid + 1; } else hi = mid - 1;
   }
+  // 进度高光：当前这句已唱到的比例（0~1）→ 喂给歌词着色器（每 250ms 更新，引擎里做平滑）
+  const curL = state.lyrics[idx];
+  if (curL && visual.setLyricProgress) {
+    const nextL = state.lyrics[idx + 1];
+    const span = Math.max(0.25, (nextL ? nextL.time : curL.time + 4) - curL.time);
+    visual.setLyricProgress((t - curL.time) / span);
+  }
   if (idx === state.lrcIndex) return;
   state.lrcIndex = idx;
   const cur = state.lyrics[idx];
@@ -762,6 +769,18 @@ if (new URLSearchParams(location.search).has('probe')) {
       // 便于截图验证"电影镜头"的机位变化与过渡
       if (wantBox === 2) {
         setInterval(() => window.__ncm.visual.cutToShot(window.__ncm.visual.shotIndex + 1), 9000);
+      }
+
+      // 诊断：?morph=0.25 把歌词固定在"星河期"，?prog=0.5 固定进度高光位置
+      { const q2 = new URLSearchParams(location.search);
+        const mf = q2.get('morph'), pg = q2.get('prog');
+        if (mf !== null || pg !== null) {
+          setInterval(() => {
+            const V = window.__ncm.visual;
+            if (mf !== null) V.lyricMorph = Number(mf);
+            if (pg !== null) { V.lyricProgress = Number(pg); V.lyricProgressTarget = Number(pg); }
+          }, 16);
+        }
       }
     }
 

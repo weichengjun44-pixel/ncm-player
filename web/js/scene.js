@@ -162,29 +162,39 @@ const VERT_LYRIC = /* glsl */ `
   attribute vec3 aScatter;
   attribute vec3 aColor;
   attribute float aSeed;
+  attribute float aAlong;
   varying vec3 vColor;
   varying float vAlpha;
+  varying float vAlong;
   void main() {
     vColor = aColor;
+    vAlong = aAlong;
     float m = clamp(uMorph, 0.0, 1.0);
-    float e = 1.0 - pow(1.0 - m, 3.0);
-    vec3 p = mix(aScatter, aHome, e);
 
-    // 极小抖动：字形要清楚，所以只留一点点生气
-    p += vec3(fract(aSeed*13.1)-0.5, fract(aSeed*29.7)-0.5, fract(aSeed*7.3)-0.5) * (0.25 + uTreble * 0.45);
-    // 极轻的呼吸（不破坏可读性）
-    p.z += sin(uTime * 1.05 + aSeed * 17.0) * 0.45;
+    // 两段式：前 42% 是"星河流"（沿河漂流），随后聚成字
+    float river = smoothstep(0.0, 0.42, m);
+    float gather = smoothstep(0.34, 1.0, m);
+    vec3 p = aScatter;
+    p.x += sin(uTime * 0.50 + aSeed * 40.0) * 4.2 * (1.0 - gather);
+    p.y += sin(uTime * 0.42 + aSeed * 26.0) * 1.7 * river;
+    p.z += sin(uTime * 0.35 + aSeed * 17.0) * 3.2 * river;
+    p = mix(p, aHome, gather);
+
+    // 成字后只留极小抖动（字形必须清楚）
+    p += vec3(fract(aSeed*13.1)-0.5, fract(aSeed*29.7)-0.5, fract(aSeed*7.3)-0.5) * (0.25 + uTreble * 0.45) * gather;
+    p.z += sin(uTime * 1.05 + aSeed * 17.0) * 0.45 * gather;
 
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mv;
     gl_PointSize = uSize * uPixel * (300.0 / max(-mv.z, 1.0));
-    vAlpha = 0.55 + 0.45 * aSeed;
+    vAlpha = (0.55 + 0.45 * aSeed) * (0.72 + 0.28 * gather);   // 星河期要看得见，成字后更实
   }
 `;
 const FRAG_LYRIC = /* glsl */ `
-  uniform float uLevel, uMorph;
+  uniform float uLevel, uMorph, uProgress, uTime, uBass;
   varying vec3 vColor;
   varying float vAlpha;
+  varying float vAlong;
   void main() {
     float d = length(gl_PointCoord - 0.5);
     float edge = smoothstep(0.50, 0.34, d);        // 外缘硬边 → 笔画清晰
@@ -194,8 +204,14 @@ const FRAG_LYRIC = /* glsl */ `
     vec3 col = mix(vColor, vec3(1.0), core * 0.90);        // 字芯提白 → 更清晰、不发灰
     // 总亮度与旧版持平（0.44×0.58 ≈ 0.38×0.70）：白芯是靠"配色替换"实现的，不是靠加亮。
     // 关键：4 倍粒子重叠后叠加值必须仍低于泛光阈值，否则整行会糊成一条白光（踩过这个坑）。
+    col += vec3(0.56, 0.91, 1.00) * (1.0 - core) * 0.20;        // 青色辉光（照 Mineradio 的 rgba(143,233,255,.34)）
+    float hi = 1.0 - smoothstep(0.0, 0.055, abs(vAlong - uProgress));
+    col += vec3(1.00, 0.94, 0.74) * hi * 0.85;                  // 进度高光：跟着唱到的位置走（暖金）
+    float shim = pow(max(0.0, sin((vAlong - gl_PointCoord.y * 0.10 + uTime * 0.82) * 26.0)), 26.0);
+    col += vec3(0.90, 0.98, 1.00) * shim * 0.30;                // 斜向微光扫过
+    col += vec3(1.00, 0.86, 0.52) * uBass * 0.10;               // 强拍加暖（它的太阳泛光）
     gl_FragColor = vec4(col * (0.24 + core * 0.20),
-                        edge * vAlpha * (0.36 + core * 0.22) * clamp(uMorph, 0.0, 1.0));
+                        edge * vAlpha * (0.36 + core * 0.22 + hi * 0.30) * clamp(uMorph, 0.0, 1.0));
   }
 `;
 
@@ -752,7 +768,7 @@ export class VisualEngine {
     // 采样步长：按"目标粒子数"反推，句子长短都稳定在 ~1.6 万颗，字形边缘够细
     const TARGET = 16000;
     let step = Math.max(1, Math.round(Math.sqrt((w * h * 0.30) / TARGET)));
-    const homes = [], scatters = [], colors = [], seeds = [];
+    const homes = [], scatters = [], colors = [], seeds = [], alongs = [];
     const scale = LYRIC_W / w;
     const pal = this.palette && this.palette.length ? this.palette : FALLBACK_PALETTE;
     const c = new THREE.Color();
@@ -764,12 +780,17 @@ export class VisualEngine {
         const jx = (Math.random() - 0.5) * half;
         const jy = (Math.random() - 0.5) * half;
         homes.push((x + jx - w / 2) * scale, -(y + jy - h / 2) * scale, (Math.random() - 0.5) * 0.9);
-        const rr = 150 + Math.random() * 320;
-        const th = Math.random() * Math.PI * 2, ph = Math.acos(Math.random() * 2 - 1);
-        scatters.push(rr * Math.sin(ph) * Math.cos(th), rr * Math.cos(ph) * 0.6, rr * Math.sin(ph) * Math.sin(th));
+        // 星河流：散点贴着这一行的文本尺寸铺成一条流动的星河带（不是随机球壳）
+        const lane = Math.random(), depth = (Math.random() - 0.5) * 2, ph2 = Math.random();
+        scatters.push(
+          (lane - 0.5) * (textW * scale * 1.18 + 9) + (Math.random() - 0.5) * 3.5,
+          Math.sin(lane * 6.2831853) * 2.6 + (Math.random() - 0.5) * 4.5,
+          depth * 15 + 4 + Math.sin(ph2 * 6.2831853) * 3.0,
+        );
         c.copy(pal[Math.min(pal.length - 1, Math.floor((x / w) * pal.length))]);   // 横向渐变取色组
         colors.push(c.r, c.g, c.b);
         seeds.push(Math.random());
+        alongs.push(x / Math.max(1, w - 1));      // 0..1：进度高光/微光扫过用
       }
     }
     if (homes.length < 60) return;
@@ -780,11 +801,13 @@ export class VisualEngine {
     geo.setAttribute('aScatter', new THREE.Float32BufferAttribute(scatters, 3));
     geo.setAttribute('aColor', new THREE.Float32BufferAttribute(colors, 3));
     geo.setAttribute('aSeed', new THREE.Float32BufferAttribute(seeds, 1));
+    geo.setAttribute('aAlong', new THREE.Float32BufferAttribute(alongs, 1));
 
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 }, uBass: { value: 0 }, uMid: { value: 0 }, uTreble: { value: 0 },
         uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 1.05 },
+        uProgress: { value: 0 },
       },
       vertexShader: VERT_LYRIC,
       fragmentShader: FRAG_LYRIC,
@@ -806,6 +829,8 @@ export class VisualEngine {
     this.lyricGroup = group;
     this.lyricMat = mat;
     this.lyricMorph = 0;
+    this.lyricProgress = 0;
+    this.lyricProgressTarget = 0;
     this.lyricPoints = homes.length / 3;
   }
 
@@ -1024,6 +1049,11 @@ export class VisualEngine {
     if (this.video.readyState >= 1) this.syncVideo(startAt, true);
   }
 
+  /** 歌词进度高光：p = 当前这句已唱到的比例 0~1（由 app.js 按 LRC 时间算好传进来） */
+  setLyricProgress(p) {
+    this.lyricProgressTarget = Math.max(0, Math.min(1, Number(p) || 0));
+  }
+
   /** 让 MV 与歌曲进度对齐：按 MV 时长取模（MV 常比歌曲短 → 两边周期一致），
       偏差小于 0.35s 不纠正，避免频繁 seek 造成卡顿。force=true 用于拖动进度条后的强制对齐。 */
   syncVideo(t, force = false) {
@@ -1170,13 +1200,16 @@ export class VisualEngine {
 
     // 歌词粒子：飞入 + 始终朝向相机（任何角度都读得出来）
     if (this.lyricMat) {
-      this.lyricMorph = Math.min(1, this.lyricMorph + dt / 1.25);
+      this.lyricMorph = Math.min(1, this.lyricMorph + dt / 2.0);   // 2 秒：前 0.84s 星河漂流，之后聚成字
       this.lyricMat.uniforms.uMorph.value = this.lyricMorph;
       this.lyricMat.uniforms.uTime.value = this.time;
       this.lyricMat.uniforms.uBass.value = bass;
       this.lyricMat.uniforms.uMid.value = mid;
       this.lyricMat.uniforms.uTreble.value = treble;
       this.lyricMat.uniforms.uLevel.value = level;
+      // 进度高光平滑跟随（歌词每 250ms 才更新一次，直接跳会一格一格）
+      this.lyricProgress += ((this.lyricProgressTarget || 0) - this.lyricProgress) * Math.min(1, dt * 9);
+      this.lyricMat.uniforms.uProgress.value = this.lyricProgress;
     }
     if (this.lyricGroup) {
       this.lyricGroup.quaternion.copy(this.camera.quaternion);
