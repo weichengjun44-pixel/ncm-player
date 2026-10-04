@@ -315,3 +315,34 @@ dist/
 **体积优化（待做）**：`api/` 目录 188M，其中一半是开发依赖
 （typescript 23M、prettier 9.7M、eslint 相关…），运行时用不到。
 打包前 `cd api && npm prune --omit=dev` 可以显著瘦身。
+
+### 安装包自测（一条命令跑完整闭环）
+
+```bash
+bash desktop/test-installer.sh              # 静默安装（验默认目录）→ 验证 → 启动
+bash desktop/test-installer.sh --uninstall  # 卸载 → 验证清理
+```
+
+实测结果（2026-10-04）：
+
+| 检查项 | 结果 |
+|---|---|
+| 默认安装目录 | `D:\NEBULA` ✓（**不是 C 盘**，靠 `installer.nsh` 覆写注册表 InstallLocation）|
+| 桌面快捷方式 / 开始菜单 | ✓ 都建了，卸载时都清掉 |
+| 注册表面板登记 | ✓ `DisplayName=NEBULA 0.1.0` + QuietUninstallString |
+| 安装版启动 | ✓ 自拉起中间层 + 网易云 API，歌单可载入、正常播放 |
+| 卸载 | ✓ 程序/快捷方式/注册表全清，安装目录也删掉 |
+| 用户数据 | ✓ 保留（`deleteAppDataOnUninstall: false`），重装不用重新登录 |
+
+**几个只会在实机上暴露的坑**：
+
+- **默认装到 C 盘**：electron-builder 在 `perMachine:false` 时默认 `%LOCALAPPDATA%\Programs\...`，
+  顺手点下一步就进 C 盘。必须用 `nsis.include` + `preInit` 宏覆写注册表里的 `InstallLocation`。
+- **卸载器不能通过 `cmd /c "\"路径\""` 调**：引号会被吃掉，报「不是内部或外部命令」而**静默什么也没做**。
+  直接从 bash 调用 `"/d/NEBULA/Uninstall NEBULA.exe" /currentuser /S` 才有效。
+- **卸载是异步的**：卸载器会把自己复制到临时目录再执行，所以调用后要轮询文件消失，不能立刻判断。
+- **后台命令退出会带走子进程**：用 `bash xxx.sh &` 方式启动 GUI 程序，脚本一结束进程树就被清掉，
+  表现为「应用自己退出了」——排查时容易误判成崩溃。
+- **登录态与数据目录绑定**：安装版的数据目录是 `D:\NebulaPlayer\data`，与开发版（项目根）不同。
+  实机上看到「已登录」是因为它复用了开发环境跑着的服务；**独立运行需要在新数据目录里登录一次**
+  （或把 `.cookie*` 复制过去）。

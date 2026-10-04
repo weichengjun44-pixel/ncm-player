@@ -63,7 +63,9 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "shortcutName": "NEBULA 粒子音乐空间",
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "include": "installer.nsh",
+      "runAfterFinish": true
     },
     "directories": {
       "output": "../dist",
