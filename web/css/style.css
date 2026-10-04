@@ -160,11 +160,10 @@ button.ghost:hover { color: var(--accent); border-color: rgba(255, 196, 107, 0.4
 }
 .lrc-wrap {
   position: relative; display: inline-block;
-  padding: 10px 26px 9px;
-  border-radius: 18px;
-  background: radial-gradient(120% 130% at 50% 40%, rgba(4, 7, 18, 0.66) 0%, rgba(4, 7, 18, 0.42) 60%, rgba(4, 7, 18, 0) 100%);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  padding: 0;
+  background: none;          /* 按需求：去掉下一句歌词背后的黑框 */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   text-align: center;
 }
 .lrc-prev {
@@ -187,7 +186,7 @@ button.ghost:hover { color: var(--accent); border-color: rgba(255, 196, 107, 0.4
   font-size: clamp(12.5px, 1.35vw, 16px);
   color: rgba(226, 214, 196, 0.58);
   line-height: 1.75; letter-spacing: 0.02em;
-  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.8);
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.95);
   opacity: 0; transition: opacity 0.35s;
   height: 1.75em; overflow: hidden;
 }

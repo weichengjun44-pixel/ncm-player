@@ -119,10 +119,10 @@ const FRAG_COVER = /* glsl */ `
   varying float vAlpha;
   void main() {
     float d = length(gl_PointCoord - 0.5);
-    float m = smoothstep(0.5, 0.20, d);          // 边缘收紧 → 画面细节看得清（软边会糊）
+    float m = smoothstep(0.5, 0.30, d);          // 边缘更硬 → 细节更锐（软边会糊成一团光）
     if (m <= 0.004) discard;
     // 亮度压到 0.42：现在粒子密度翻倍，叠加后如果还按 0.62 会过曝白掉
-    gl_FragColor = vec4(vColor * (0.42 + uLevel * 0.30), m * vAlpha * (0.30 + 0.40 * clamp(uMorph,0.0,1.0) + uLevel * 0.22));
+    gl_FragColor = vec4(vColor * (0.50 + uLevel * 0.30), m * vAlpha * (0.34 + 0.44 * clamp(uMorph,0.0,1.0) + uLevel * 0.22));
   }
 `;
 
@@ -223,11 +223,11 @@ export class VisualEngine {
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setClearColor(0x000000, 1);   // 纯黑底：宇宙不是蓝的
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.12;
+    this.renderer.toneMapping = THREE.LinearToneMapping;   // 黑就是黑，不发灰
+    this.renderer.toneMappingExposure = 1.05;
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2(0x000000, 0.0052);   // 更浓的雾 → 更深的纵深
+    this.scene.fog = new THREE.FogExp2(0x000000, 0.0024);   // 很淡的雾：只压远处，不发灰
     this.camera = new THREE.PerspectiveCamera(56, window.innerWidth / window.innerHeight, 0.1, 4000);
 
     // ---- 深空星场（三层景深：近/中/远，转动时视差明显）----
@@ -283,7 +283,7 @@ export class VisualEngine {
         else if (face === 4) { pos[i * 3 + 2] = s - inset; pos[i * 3] = a; pos[i * 3 + 1] = b; }
         else { pos[i * 3 + 2] = -s + inset; pos[i * 3] = a; pos[i * 3 + 1] = b; }
         c.copy(IVORY).lerp(MAGENTA, Math.random() * 0.3).lerp(AMBER, Math.random() * 0.25);
-        col[i * 3] = c.r * 0.5; col[i * 3 + 1] = c.g * 0.5; col[i * 3 + 2] = c.b * 0.5;
+        col[i * 3] = c.r * 0.34; col[i * 3 + 1] = c.g * 0.34; col[i * 3 + 2] = c.b * 0.34;
         seed[i] = Math.random();
         size[i] = 1.0 + Math.random() * 2.0;
       }
@@ -395,7 +395,7 @@ export class VisualEngine {
     // ---- 后期 ----
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.62, 0.62, 0.32);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.46, 0.48, 0.52);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
 
@@ -588,8 +588,9 @@ export class VisualEngine {
     best.getHSL(_hslPal);
     // 亮度主要跟像素自身的明暗走（权重 0.78）→ 画面层次保得住、看得清；
     // 色相/饱和度来自色组 → 整体色彩仍然成体系
-    const l = Math.min(0.82, Math.max(0.14, _hslPal.l * 0.42 + lum * 0.78));
-    const s = Math.min(0.95, _hslPal.s * (0.55 + 0.55 * Math.min(1, _hslSrc.s * 2.0)));
+    let l = Math.min(0.86, Math.max(0.10, _hslPal.l * 0.42 + lum * 0.78));
+    l = l * l * (3.0 - 2.0 * l);                       // S 曲线：拉开明暗，免发灰
+    const s = Math.min(0.98, _hslPal.s * (0.60 + 0.60 * Math.min(1, _hslSrc.s * 2.0)));
     return _tmpOut.setHSL(_hslPal.h, s, l);
   }
 
@@ -713,7 +714,7 @@ export class VisualEngine {
 
   /* ---------------------------------------------------------- 封面 → 粒子 */
   /** 把专辑封面采样成粒子云；换歌时从远处飞回来重组（morph 0→1） */
-  async setCoverToParticles(url, { width = 224 } = {}) {
+  async setCoverToParticles(url, { width = 256 } = {}) {
     if (!url) { this.clearCover(); return; }
     let img;
     try {
@@ -788,7 +789,7 @@ export class VisualEngine {
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 }, uBass: { value: 0 }, uMid: { value: 0 }, uTreble: { value: 0 },
-        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 0.95 },
+        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 0.80 },
       },
       vertexShader: VERT_COVER,
       fragmentShader: FRAG_COVER,
