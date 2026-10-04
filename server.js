@@ -637,6 +637,28 @@ const server = http.createServer((req, res) => {
     if (p === '/healthz') {
       return sendJson(res, 200, { ok: true, api: API_BASE, port: PORT });
     }
+    // 手机端没有控制台：前端 boot.js 把错误 POST 到这里，落到日志里便于排查
+    // （桌面端有 DevTools，这块是专门为手机/平板准备的）
+    if (req.method === 'POST' && p === '/__boot') {
+      let body = '';
+      req.on('data', (c) => { body += c; if (body.length > 16384) req.destroy(); });
+      req.on('end', () => {
+        let j = {};
+        try { j = JSON.parse(body || '{}'); } catch (e) {}
+        const nl = String.fromCharCode(10);
+        const line = '[前端] ' + new Date().toLocaleString('zh-CN') + ' ' + (j.kind || '?')
+          + ' | 卡在: ' + (j.stage || '-') + ' | 耗时 ' + (j.t || 0) + 'ms | webgl2=' + j.gl2
+          + ' | 屏幕 ' + (j.screen || '-') + ' dpr=' + (j.dpr || '-')
+          + nl + '         ' + (j.msg || '')
+          + (j.extra ? nl + '         extra=' + JSON.stringify(j.extra) : '')
+          + (j.ua ? nl + '         UA: ' + j.ua : '');
+        console.log(line);
+        try { fs.appendFileSync(path.join(DATA_ROOT, 'client.log'), line + nl); } catch (e) {}
+      });
+      res.writeHead(204, { 'Access-Control-Allow-Origin': '*' });
+      res.end();
+      return;
+    }
     if (p.startsWith('/vendor/three/')) return serveVendor(req, res, url);
     if (p.startsWith('/api/login/') || p === '/api/logout' || p === '/api/me/playlists') {
       return void handleAuth(req, res, url, p);

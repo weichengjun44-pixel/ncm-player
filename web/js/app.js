@@ -73,29 +73,74 @@ async function api(path) {
 }
 
 /* ----------------------------------------------------------- 音频图 */
+/* ---------------------------------------------------------------
+   音频图：顺序很关键，这是手机端"没声音"的根因
+   一旦 createMediaElementSource 把 <audio> 接进 Web Audio 图，声音就只能从
+   AudioContext 走。手机上如果这个 ctx 没能在用户手势里进入 running，表现就是
+   "画面在动、进度在走、就是没声音"（桌面端策略宽松，所以这个坑只在手机上出现）。
+   所以改成：先恢复 ctx 并确认 running，才接管音频元素；确认不了就永不接管，
+   让元素直接出声 —— 损失频谱可视化，但绝对不能没声音。
+   --------------------------------------------------------------- */
 function initAudioGraph() {
   if (state.ctx) return;
   const Ctx = window.AudioContext || window.webkitAudioContext;
-  state.ctx = new Ctx();
-  state.source = state.ctx.createMediaElementSource(audio);
-  state.analyser = state.ctx.createAnalyser();
-  state.analyser.fftSize = 2048;
-  state.analyser.smoothingTimeConstant = 0.78;
-  state.analyser.minDecibels = -92;
-  state.analyser.maxDecibels = -12;
-  state.source.connect(state.analyser);
-  state.analyser.connect(state.ctx.destination);
-  visual.setAnalyser(state.analyser);
+  try {
+    state.ctx = new Ctx();
+  } catch (e) {
+    if (window.NEBULA_BOOT) NEBULA_BOOT.fail('noctx', 'AudioContext 创建失败：' + (e.message || e));
+    return;
+  }
+  // suspended → running 是异步的，所以状态一变就尝试接管
+  state.ctx.onstatechange = () => { if (state.ctx.state === 'running') tapAudio(); };
+  if (state.ctx.state === 'running') tapAudio();
+}
+
+/** 把音频元素接进 Web Audio 图（只做一次）—— 必须在确认 ctx 真的在跑之后 */
+function tapAudio() {
+  if (state.tapped || !state.ctx || state.ctx.state !== 'running') return;
+  try {
+    state.source = state.ctx.createMediaElementSource(audio);
+    state.analyser = state.ctx.createAnalyser();
+    state.analyser.fftSize = 2048;
+    state.analyser.smoothingTimeConstant = 0.78;
+    state.analyser.minDecibels = -92;
+    state.analyser.maxDecibels = -12;
+    state.source.connect(state.analyser);
+    state.analyser.connect(state.ctx.destination);
+    visual.setAnalyser(state.analyser);
+    state.tapped = true;
+    if (window.NEBULA_BOOT) NEBULA_BOOT.audio({ event: 'tapped', ctx: state.ctx.state });
+  } catch (e) {
+    state.tapped = false;
+    if (window.NEBULA_BOOT) NEBULA_BOOT.fail('tap', '接管音频失败（仍会正常出声）：' + (e.message || e));
+  }
 }
 
 /** 浏览器要求用户手势后才能出声 */
 function resumeCtx() {
   initAudioGraph();
-  if (state.ctx.state === 'suspended') state.ctx.resume().catch(() => {});
+  if (!state.ctx) return false;
+  if (state.ctx.state === 'suspended') {
+    state.ctx.resume().then(() => {
+      if (window.NEBULA_BOOT) NEBULA_BOOT.stage('音频已解锁');
+    }).catch((e) => {
+      if (window.NEBULA_BOOT) NEBULA_BOOT.audio({ event: 'resume-failed', state: state.ctx.state, err: String((e && e.message) || e) });
+    });
+  }
+  return state.ctx.state === 'running';
 }
 
+// 移动端：第一次触摸/点击就把音频解锁 —— 浏览器只认"手势里"发生的恢复动作，
+// 等用户点播放才做往往已经晚了一步（那时 resume 可能被拒，于是静默无声）。
+['pointerdown', 'touchstart', 'keydown'].forEach((ev) =>
+  window.addEventListener(ev, () => { try { resumeCtx(); } catch (e) {} }, { once: true, capture: true }));
+
 /* ----------------------------------------------------------- 视觉 */
+if (window.NEBULA_BOOT) NEBULA_BOOT.stage('创建视觉引擎');
 const visual = new VisualEngine($('#stage'));
+// 给调试条用：手机上看不到控制台，把音频状态显到画面上
+visual.audioState = () => (state.ctx ? state.ctx.state : 'none') + (state.tapped ? '/已接管' : '/直通');
+if (window.NEBULA_BOOT) NEBULA_BOOT.stage('视觉引擎已创建');
 els.reset.addEventListener('click', () => {
   visual.resetView();
   toast('视角已复位（画面里拖动可 360° 环绕，滚轮推拉）');
@@ -129,6 +174,7 @@ function renderList(title, items, { highlightId } = {}) {
     });
     els.list.appendChild(div);
   });
+  if (window.NEBULA_BOOT) NEBULA_BOOT.ready();
 }
 
 function escapeHtml(s) {

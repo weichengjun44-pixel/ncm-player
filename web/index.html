@@ -160,37 +160,7 @@
   <div id="toast" class="toast"></div>
 
   <audio id="audio" preload="metadata"></audio>
-  <script>
-    /* 前端兜底：任何脚本/资源错误都在页面上直接显示，方便排查 */
-    (function () {
-      function show(msg) {
-        var b = document.getElementById('errbar');
-        if (!b) {
-          b = document.createElement('div');
-          b.id = 'errbar';
-          b.className = 'errbar';
-          b.addEventListener('click', function () { b.style.display = 'none'; });
-          document.body.appendChild(b);
-        }
-        b.textContent = '⚠ ' + msg + '   （点击关闭）';
-        b.style.display = 'block';
-        clearTimeout(b._t);
-        b._t = setTimeout(function () { b.style.display = 'none'; }, 8000);
-      }
-      window.addEventListener('error', function (e) {
-        if (e && e.message) {
-          var f = e.filename ? e.filename.split('/').pop() + ':' + e.lineno : '';
-          show(e.message + '  ' + f);
-        } else if (e && e.target && (e.target.src || e.target.href)) {
-          show('资源加载失败: ' + (e.target.src || e.target.href));
-        }
-      }, true);
-      window.addEventListener('unhandledrejection', function (e) {
-        var r = e && e.reason;
-        show('异步异常: ' + ((r && (r.message || r)) || 'unknown'));
-      });
-    })();
-  </script>
+  <script src="./js/boot.js"></script>
   <script type="module" src="./js/app.js"></script>
 </body>
 </html>

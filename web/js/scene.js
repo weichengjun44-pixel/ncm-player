@@ -522,6 +522,7 @@ export class VisualEngine {
     }
 
     // ---- 后期 ----
+    if (window.NEBULA_BOOT) NEBULA_BOOT.stage('已建渲染器+后期');
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     // 泛光始终开（关掉就发灰）；低画质档按 bloomScale 降分辨率来控制开销
@@ -1249,7 +1250,7 @@ export class VisualEngine {
       coverPoints: this.coverPoints,
       lyricPoints: this.lyricPoints || 0,
       palette: (this.palette || []).length,
-      quality: this.quality || "high",
+      quality: (this.quality || "high") + (this.audioState ? " · 音频 " + this.audioState() : ""),
       pts: this.scene.children.filter(o => o.isPoints && o.geometry).map(o => Math.round(o.geometry.attributes.position.count / 1000) + 'k' + (o.visible ? '' : '隐')).join(' / '),
       mv: !this.videoPoints || !this.videoPoints.visible
         ? '无'
