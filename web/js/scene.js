@@ -424,8 +424,8 @@ export class VisualEngine {
       this.video.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none;z-index:-1';
       document.body.appendChild(this.video);
 
-      this.VW = 544;                       // 采样分辨率（16:9）—— 随平面等比提高，格子尺寸保持不变
-      this.VH = 306;
+      this.VW = 672;                       // 采样分辨率（16:9）—— 格子越小画面越细（0.79 → 0.64 单位）
+      this.VH = 378;
       this.videoCanvas = document.createElement('canvas');
       this.videoCanvas.width = this.VW;
       this.videoCanvas.height = this.VH;
@@ -447,7 +447,7 @@ export class VisualEngine {
           pos[i * 3 + 1] = -(y - this.VH / 2 + 0.5) * cellH + (Math.random() - 0.5) * cellH * 0.7;
           pos[i * 3 + 2] = (Math.random() - 0.5) * 2.5;
           seed[i] = Math.random();
-          size[i] = 2.6 + Math.random() * 1.0;   // 点径再加大 → 画面更"实"（点数几乎盖满格子）
+          size[i] = 2.1 + Math.random() * 0.8;   // 随格子同步缩小 → 密度与亮度不变，只是更细
         }
       }
       const g = new THREE.BufferGeometry();
