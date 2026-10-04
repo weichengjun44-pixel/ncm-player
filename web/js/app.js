@@ -632,6 +632,78 @@ function setTab(which) {
 els.tabMine.addEventListener('click', () => setTab('mine'));
 els.tabSearch.addEventListener('click', () => setTab('search'));
 
+/* ------------------------------------------------ 布局自适应（歌词避开控制条）
+   底部控制条在窄屏会折行变高，写死避让值就会让按钮压到歌词上（用户看到的"黑色箭头"）。
+   这里按控制条实际高度动态让位，任何窗口尺寸都不会撞。 */
+function fitLayout() {
+  const bar = document.querySelector('.bottom');
+  const ctr = document.getElementById('center');
+  if (!bar || !ctr) return;
+  const h = Math.ceil(bar.getBoundingClientRect().height);
+  ctr.style.bottom = (h + 30) + 'px';
+}
+window.addEventListener('resize', fitLayout);
+if (window.ResizeObserver) {
+  const bar = document.querySelector('.bottom');
+  if (bar) new ResizeObserver(fitLayout).observe(bar);
+}
+fitLayout();
+
+/* ----------------------------------------------------------- 探针（?probe=1） */
+if (new URLSearchParams(location.search).has('probe')) {
+  els.dbg.classList.add('show');
+  const NL = String.fromCharCode(10);
+  setTimeout(() => {
+    const out = ['视口 ' + innerWidth + 'x' + innerHeight];
+    for (const fy of [0.5, 0.58, 0.66, 0.74, 0.82]) {
+      const x = Math.round(innerWidth / 2);
+      const y = Math.round(innerHeight * fy);
+      const el = document.elementFromPoint(x, y);
+      let desc = 'null';
+      if (el) {
+        const cs = getComputedStyle(el);
+        desc =
+          el.tagName +
+          (el.id ? '#' + el.id : '') +
+          (el.className ? '.' + String(el.className).split(' ')[0] : '') +
+          ' bg=' + cs.backgroundColor +
+          ' txt=' + JSON.stringify((el.textContent || '').trim().slice(0, 16));
+      }
+      out.push(x + ',' + y + ' -> ' + desc);
+    }
+    const bar = document.querySelector('.bottom');
+    const ctr = document.getElementById('center');
+    const lw = document.querySelector('.lrc-wrap');
+    out.push('--- 布局 ---');
+    out.push('控制条 .bottom 高=' + (bar ? Math.round(bar.getBoundingClientRect().height) : '?') +
+             '  歌词区 .center bottom=' + (ctr ? getComputedStyle(ctr).bottom : '?') +
+             '  歌词块 y=' + (lw ? Math.round(lw.getBoundingClientRect().top) + '-' + Math.round(lw.getBoundingClientRect().bottom) : '?') +
+             ' 视口高=' + innerHeight);
+    const hits = [];
+    document.querySelectorAll('body *').forEach((el) => {
+      const r = el.getBoundingClientRect();
+      if (r.width < 3 || r.height < 3) return;
+      if (r.top < innerHeight * 0.3) return;
+      const bg = getComputedStyle(el).backgroundColor;
+      const opaque = bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent' && bg.indexOf('rgba(0, 0, 0, 0') !== 0;
+      if (!opaque) return;
+      hits.push(
+        el.tagName + (el.id ? '#' + el.id : '') + '.' + String(el.className || '').split(' ')[0] +
+        ' y=' + Math.round(r.top) + '-' + Math.round(r.bottom) +
+        ' bg=' + bg +
+        ' txt=' + JSON.stringify((el.textContent || '').trim().slice(0, 16))
+      );
+    });
+    out.push('--- 下半屏不透明元素 ' + hits.length + ' ---');
+    for (const h of hits.slice(0, 12)) out.push(h);
+    const box = document.createElement('pre');
+    box.id = 'probeOut';
+    box.style.cssText = 'position:fixed;left:8px;top:8px;z-index:99;color:#fff;background:#000;font:11px monospace;max-width:96vw;white-space:pre-wrap;padding:6px';
+    box.textContent = out.join(NL);
+    document.body.appendChild(box);
+  }, 3500);
+}
+
 /* ----------------------------------------------------------- 调试条 */
 if (new URLSearchParams(location.search).has('debug')) {
   els.dbg.classList.add('show');

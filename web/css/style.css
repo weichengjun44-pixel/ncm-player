@@ -377,7 +377,6 @@ button.ghost:hover { color: var(--accent); border-color: rgba(255, 196, 107, 0.4
   .now { justify-content: center; }
   .panel { top: 76px; left: 12px; right: 12px; width: auto; bottom: 40vh; }
   .search input { width: 42vw; }
-  .center { top: 38%; }
 }
 @media (max-width: 640px) {
   .brand i { display: none; }
