@@ -17,3 +17,5 @@ desktop/node_modules/
 dist/
 desktop/.cache/
 desktop/build/*.png
+.tunnel-url
+logs/
