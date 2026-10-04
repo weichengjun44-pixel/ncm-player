@@ -722,7 +722,14 @@ if (new URLSearchParams(location.search).has('probe')) {
     // ---- 诊断用：把相机固定成"正视图"并冻结自动旋转，保证截图可比 ----
     if (window.__ncm && window.__ncm.visual) {
       const v = window.__ncm.visual.view;
-      v.theta = Math.PI / 2; v.phi = Math.PI / 2; v.radius = 200; v.vTheta = 0; v.vPhi = 0;
+      const q = new URLSearchParams(location.search);
+      v.theta = Math.PI / 2; v.phi = Math.PI / 2; v.vTheta = 0; v.vPhi = 0;
+      v.radius = Number(q.get('r') || 200);     // 可用 ?r= 指定相机半径（诊断不同缩放）
+      if (q.get('phi')) v.phi = Number(q.get('phi'));
+      // 诊断：?swirl= 强制 MV 的绕 Y 自转（复现"平面被绞成管状"）
+      if (q.get('swirl') && window.__ncm.visual.videoMat) {
+        window.__ncm.visual.videoMat.uniforms.uSwirl.value = Number(q.get('swirl'));
+      }
       window.__ncm.visual.dragging = true;      // 冻结自动慢转，否则视角会飘
     }
 
@@ -761,6 +768,40 @@ if (new URLSearchParams(location.search).has('probe')) {
           }
         })
         .catch((e) => { info2.textContent = 'stage 出错: ' + e.message; });
+    }
+
+    // ---- 对象清单：列出所有可见点云（粒子数 + 屏幕位置 + 屏幕尺寸），用来定位"那是什么东西" ----
+    if (stageId) {
+      setTimeout(() => {
+        const V = window.__ncm.visual;
+        const Vec = V.scene.position.constructor;
+        const rows = [];
+        V.scene.traverse((o) => {
+          if (!o.isPoints || !o.visible || !o.geometry) return;
+          const g = o.geometry;
+          g.computeBoundingBox();
+          const bb = g.boundingBox;
+          const e = o.matrixWorld.elements;
+          const out = [];
+          for (const [cx, cy, cz] of [[bb.min.x, bb.min.y, bb.min.z], [bb.max.x, bb.max.y, bb.max.z]]) {
+            const w = new Vec(
+              e[0] * cx + e[4] * cy + e[8] * cz + e[12],
+              e[1] * cx + e[5] * cy + e[9] * cz + e[13],
+              e[2] * cx + e[6] * cy + e[10] * cz + e[14],
+            ).project(V.camera);
+            out.push([(w.x * 0.5 + 0.5) * innerWidth, (-w.y * 0.5 + 0.5) * innerHeight]);
+          }
+          const wpx = Math.round(Math.abs(out[1][0] - out[0][0]));
+          const hpx = Math.round(Math.abs(out[1][1] - out[0][1]));
+          const mx = Math.round((out[0][0] + out[1][0]) / 2);
+          const my = Math.round((out[0][1] + out[1][1]) / 2);
+          rows.push(`${g.attributes.position.count}颗 中心(${mx},${my}) 尺寸${wpx}x${hpx}px`);
+        });
+        const el = document.createElement('div');
+        el.style.cssText = 'margin:6px 0 0;font-size:11px;line-height:1.3';
+        el.textContent = '=== 可见点云（粒子数 + 屏幕位置）===' + String.fromCharCode(10) + rows.join(String.fromCharCode(10));
+        box.appendChild(el);
+      }, 12000);
     }
 
     // ---- 亮度网格：把画面缩成 32x18 打 ASCII 图，精确定位"哪一块在发光"（MV 铺到哪了）----

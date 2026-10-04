@@ -465,7 +465,10 @@ export class VisualEngine {
         this.videoFade[i] = (1 - Math.min(1, Math.max(0, (e - 0.82) / 0.18)) ** 1.5) * central;
       }
       this.videoGeo = g;
-      this.videoMat = pointsMaterial({ uSwirl: { value: 0.004 }, uExpand: { value: 0.06 } });
+      // uSwirl 必须为 0：这是给星场/浮尘的绕 Y 轴自转，但对 MV 这块平面是灾难——
+      // 平面 z≈0 时 r=|x|，正中一列粒子 |x|≈0 旋转速度是边缘的 8 倍，
+      // 播放十几分钟后正中被扭转近一整圈，整块平面绞成管状（用户报的"圆柱形"）。
+      this.videoMat = pointsMaterial({ uSwirl: { value: 0 }, uExpand: { value: 0.06 } });
       this.videoMat.uniforms.uPixel.value = dpr;
       this.videoPoints = new THREE.Points(g, this.videoMat);
       this.videoPoints.frustumCulled = false;
