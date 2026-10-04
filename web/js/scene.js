@@ -412,6 +412,10 @@ export class VisualEngine {
       this.video = document.createElement('video');
       this.video.muted = true;
       this.video.loop = true;
+      // 元数据就绪后套用"待定位时间"（attachVideo 时记录）→ MV 从歌曲当前进度开始
+      this.video.addEventListener('loadedmetadata', () => {
+        if (this._pendingSeek) this.syncVideo(this._pendingSeek, true);
+      });
       this.video.playsInline = true;
       this.video.preload = 'auto';
       // 注意：不要设 opacity:0 —— 某些内核会因此不给视频解帧（drawImage 全黑）；
@@ -919,13 +923,28 @@ export class VisualEngine {
 
   /* ---------------------------------------------------------- MV 视频 → 粒子 */
   /** 挂一支 MV（同源 /mv?id=... 流），用它实时驱动背后的粒子幕 */
-  attachVideo(url) {
+  attachVideo(url, startAt = 0) {
     if (!this.video) return;
     if (this.videoUrl === url && this.videoPoints.visible) return;
     this.videoUrl = url;
+    this._pendingSeek = startAt;              // 歌曲进度：MV 从这里开始
     this.videoPoints.visible = true;
     this.video.src = url;
     this.video.play().catch(() => {});
+    if (this.video.readyState >= 1) this.syncVideo(startAt, true);
+  }
+
+  /** 让 MV 与歌曲进度对齐：按 MV 时长取模（MV 常比歌曲短 → 两边周期一致），
+      偏差小于 0.35s 不纠正，避免频繁 seek 造成卡顿。force=true 用于拖动进度条后的强制对齐。 */
+  syncVideo(t, force = false) {
+    const v = this.video;
+    if (!v || !this.videoPoints || !this.videoPoints.visible) return;
+    const d = v.duration;
+    if (!isFinite(d) || d <= 0) return;
+    const want = Math.max(0, t % d);
+    if (!force && Math.abs(v.currentTime - want) < 0.35) return;
+    try { v.currentTime = want; } catch { /* 定位失败忽略：下一帧还会再试 */ }
+    this._lastSync = want.toFixed(2);
   }
 
   detachVideo() {

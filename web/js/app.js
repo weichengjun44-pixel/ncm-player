@@ -251,7 +251,7 @@ async function loadMv(songId) {
     if (!mvid) return;                                   // 这首歌没有 MV
     const u = await api(`/mv/url?id=${mvid}&r=1080`);
     if (!u?.data?.url) return;                           // 取不到地址（VIP/版权/地区）
-    visual.attachVideo(`/mv?id=${mvid}`);                // 同源转发流 → 粒子幕
+    visual.attachVideo(`/mv?id=${mvid}`, audio.currentTime || 0);   // 同源转发流 → 粒子幕（从当前进度开始）
     if (!mvNoticeShown) {
       mvNoticeShown = true;
       toast('这首歌有 MV：正在封面后面用粒子播放（拖动画面能看到它）');
@@ -337,6 +337,7 @@ function tickProgress() {
     els.cur.textContent = fmt(c);
     els.dur.textContent = fmt(d);
   }
+  if (visual.syncVideo) visual.syncVideo(audio.currentTime);   // MV 跟着进度走
 }
 
 function seekFromEvent(e) {
@@ -358,6 +359,7 @@ els.bar.addEventListener('pointerdown', (e) => {
     const p = seekFromEvent(ev);
     state.seeking = false;
     if (isFinite(audio.duration)) audio.currentTime = audio.duration * p;
+    if (visual.syncVideo) visual.syncVideo(audio.currentTime, true);   // 拖动后强制对齐 MV
     window.removeEventListener('pointermove', move);
     window.removeEventListener('pointerup', up);
   };
@@ -421,6 +423,7 @@ els.panelPeek.addEventListener('click', () => {
   els.panelToggle.textContent = '−';
 });
 
+audio.addEventListener('seeked', () => { if (visual.syncVideo) visual.syncVideo(audio.currentTime, true); });
 audio.addEventListener('play', updatePlayIcon);
 audio.addEventListener('pause', updatePlayIcon);
 audio.addEventListener('ended', () => {
@@ -770,6 +773,24 @@ if (new URLSearchParams(location.search).has('probe')) {
         .catch((e) => { info2.textContent = 'stage 出错: ' + e.message; });
     }
 
+    // ---- 进度同步自检：把 MV 定位到 42s，回报实际落点（验证取模与 seek）----
+    if (stageId) {
+      setTimeout(() => {
+        const V = window.__ncm.visual;
+        const v = V.video;
+        if (!v || !v.duration) { info2.textContent += ' | 同步自检: 视频未就绪'; return; }
+        const before = v.currentTime;
+        V.syncVideo(42, true);
+        setTimeout(() => {
+          const want = 42 % v.duration;
+          const msg = 'SYNC mvDur=' + v.duration.toFixed(1) + 's 目标42s 期望' + want.toFixed(2) +
+            's 实际' + v.currentTime.toFixed(2) + 's 之前' + before.toFixed(2) + 's';
+          info2.textContent += ' | ' + msg;
+          document.title = msg;      // 写进标题，便于直接读出结果
+        }, 900);
+      }, 14000);
+    }
+
     // ---- 对象清单：列出所有可见点云（粒子数 + 屏幕位置 + 屏幕尺寸），用来定位"那是什么东西" ----
     if (stageId) {
       setTimeout(() => {
@@ -851,6 +872,11 @@ if (new URLSearchParams(location.search).has('probe')) {
       try {
         const u = stageEl.toDataURL('image/png');
         const tag = 's' + String(shotN + 1).padStart(2, '0');
+        const vv = window.__ncm && window.__ncm.visual && window.__ncm.visual.video;
+        if (vv) {
+          document.title = 'V=' + vv.currentTime.toFixed(2) + '/' + (isFinite(vv.duration) ? vv.duration.toFixed(1) : '?') +
+            ' last=' + (window.__ncm.visual._lastSync || '-') + ' ready=' + vv.readyState;
+        }
         fetch('/__shot?tag=' + tag, { method: 'POST', body: u })
           .then((r) => r.json())
           .then((j) => {
