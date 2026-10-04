@@ -124,6 +124,45 @@ const FRAG_COVER = /* glsl */ `
   }
 `;
 
+/* 歌词粒子专用着色器：要"清晰可读"，所以硬边、几乎不抖、亮度压在泛光阈值以下 */
+const VERT_LYRIC = /* glsl */ `
+  uniform float uTime, uBass, uMid, uTreble, uLevel, uMorph, uPixel, uSize;
+  attribute vec3 aHome;
+  attribute vec3 aScatter;
+  attribute vec3 aColor;
+  attribute float aSeed;
+  varying vec3 vColor;
+  varying float vAlpha;
+  void main() {
+    vColor = aColor;
+    float m = clamp(uMorph, 0.0, 1.0);
+    float e = 1.0 - pow(1.0 - m, 3.0);
+    vec3 p = mix(aScatter, aHome, e);
+
+    // 极小抖动：字形要清楚，所以只留一点点生气
+    p += vec3(fract(aSeed*13.1)-0.5, fract(aSeed*29.7)-0.5, fract(aSeed*7.3)-0.5) * (0.25 + uTreble * 0.45);
+    // 极轻的呼吸（不破坏可读性）
+    p.z += sin(uTime * 1.05 + aSeed * 17.0) * 0.45;
+
+    vec4 mv = modelViewMatrix * vec4(p, 1.0);
+    gl_Position = projectionMatrix * mv;
+    gl_PointSize = uSize * uPixel * (300.0 / max(-mv.z, 1.0));
+    vAlpha = 0.55 + 0.45 * aSeed;
+  }
+`;
+const FRAG_LYRIC = /* glsl */ `
+  uniform float uLevel, uMorph;
+  varying vec3 vColor;
+  varying float vAlpha;
+  void main() {
+    float d = length(gl_PointCoord - 0.5);
+    float m = smoothstep(0.5, 0.33, d);          // 硬边 → 笔画清晰，不发糊
+    if (m <= 0.01) discard;
+    // 亮度压到 0.38：低于泛光阈值起跳点，叠加后也不会糊成一片白
+    gl_FragColor = vec4(vColor * 0.38, m * vAlpha * 0.70 * clamp(uMorph, 0.0, 1.0));
+  }
+`;
+
 function pointsMaterial(extra = {}) {
   return new THREE.ShaderMaterial({
     uniforms: {
@@ -521,8 +560,8 @@ export class VisualEngine {
     if (t === this.lyricText) return;
     this.lyricText = t;
 
-    let FS = 96;
-    const pad = 26;
+    let FS = 150;                                    // 字号加大 → 采样更细，字形更清楚
+    const pad = 40;
     const mctx = document.createElement('canvas').getContext('2d');
     const fontOf = (size) => `700 ${size}px "PingFang SC","Microsoft YaHei",sans-serif`;
     mctx.font = fontOf(FS);
@@ -548,15 +587,21 @@ export class VisualEngine {
       img = ctx.getImageData(0, 0, w, h).data;
     } catch { return; }
 
-    const step = Math.max(2, Math.round(w / 300));
+    // 采样步长：按"目标粒子数"反推，句子长短都稳定在 ~1.6 万颗，字形边缘够细
+    const TARGET = 16000;
+    let step = Math.max(1, Math.round(Math.sqrt((w * h * 0.30) / TARGET)));
     const homes = [], scatters = [], colors = [], seeds = [];
     const scale = LYRIC_W / w;
     const pal = this.palette && this.palette.length ? this.palette : FALLBACK_PALETTE;
     const c = new THREE.Color();
+    const half = step * 0.5;
     for (let y = 0; y < h; y += step) {
       for (let x = 0; x < w; x += step) {
-        if (img[(y * w + x) * 4 + 3] < 120) continue;
-        homes.push((x - w / 2) * scale, -(y - h / 2) * scale, (Math.random() - 0.5) * 1.6);
+        if (img[(y * w + x) * 4 + 3] < 150) continue;          // 阈值提高 → 只取笔画实体，边缘不糊
+        // 亚像素抖动：打散规则网格，看起来更"手工"、不呆板
+        const jx = (Math.random() - 0.5) * half;
+        const jy = (Math.random() - 0.5) * half;
+        homes.push((x + jx - w / 2) * scale, -(y + jy - h / 2) * scale, (Math.random() - 0.5) * 0.9);
         const rr = 150 + Math.random() * 320;
         const th = Math.random() * Math.PI * 2, ph = Math.acos(Math.random() * 2 - 1);
         scatters.push(rr * Math.sin(ph) * Math.cos(th), rr * Math.cos(ph) * 0.6, rr * Math.sin(ph) * Math.sin(th));
@@ -577,10 +622,10 @@ export class VisualEngine {
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 }, uBass: { value: 0 }, uMid: { value: 0 }, uTreble: { value: 0 },
-        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 1.5 },
+        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 1.05 },
       },
-      vertexShader: VERT_COVER,
-      fragmentShader: FRAG_COVER,
+      vertexShader: VERT_LYRIC,
+      fragmentShader: FRAG_LYRIC,
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     });
     const pts = new THREE.Points(geo, mat);
@@ -590,9 +635,11 @@ export class VisualEngine {
     group.position.set(0, BOX * 0.56, 0);       // 浮在封面上方
     this.scene.add(group);
 
-    if (this.lyricGroup) {
-      this.scene.remove(this.lyricGroup);
-      this.lyricGroup.traverse((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
+    // 换句时旧的那行不直接消失，而是往回收（散掉），过渡更细
+    if (this.lyricGroup && this.lyricMat) {
+      this.lyricFade = { group: this.lyricGroup, mat: this.lyricMat, morph: this.lyricMorph || 1 };
+    } else if (this.lyricGroup) {
+      this.disposeGroup(this.lyricGroup);
     }
     this.lyricGroup = group;
     this.lyricMat = mat;
@@ -600,20 +647,32 @@ export class VisualEngine {
     this.lyricPoints = homes.length / 3;
   }
 
+  /** 释放一组粒子（几何 + 材质） */
+  disposeGroup(group) {
+    this.scene.remove(group);
+    group.traverse((o) => {
+      o.geometry?.dispose?.();
+      o.material?.dispose?.();
+    });
+  }
+
   clearLyricParticles() {
     if (this.lyricGroup) {
-      this.scene.remove(this.lyricGroup);
-      this.lyricGroup.traverse((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
+      this.disposeGroup(this.lyricGroup);
       this.lyricGroup = null;
       this.lyricMat = null;
       this.lyricPoints = 0;
+    }
+    if (this.lyricFade) {
+      this.disposeGroup(this.lyricFade.group);
+      this.lyricFade = null;
     }
     this.lyricText = '';
   }
 
   /* ---------------------------------------------------------- 封面 → 粒子 */
   /** 把专辑封面采样成粒子云；换歌时从远处飞回来重组（morph 0→1） */
-  async setCoverToParticles(url, { width = 132 } = {}) {
+  async setCoverToParticles(url, { width = 148 } = {}) {
     if (!url) { this.clearCover(); return; }
     let img;
     try {
@@ -687,7 +746,7 @@ export class VisualEngine {
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 }, uBass: { value: 0 }, uMid: { value: 0 }, uTreble: { value: 0 },
-        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 1.55 },
+        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 1.4 },
       },
       vertexShader: VERT_COVER,
       fragmentShader: FRAG_COVER,
@@ -773,6 +832,19 @@ export class VisualEngine {
     if (this.lyricGroup) {
       this.lyricGroup.quaternion.copy(this.camera.quaternion);
       this.lyricGroup.position.y = BOX * 0.56 + Math.sin(this.time * 0.5) * 1.3;
+    }
+    // 上一句正在散掉的那组
+    if (this.lyricFade) {
+      const f = this.lyricFade;
+      f.morph = Math.max(0, f.morph - dt / 0.55);
+      f.mat.uniforms.uMorph.value = f.morph;
+      f.mat.uniforms.uTime.value = this.time;
+      f.mat.uniforms.uTreble.value = treble;
+      if (f.group) f.group.quaternion.copy(this.camera.quaternion);
+      if (f.morph <= 0.001) {
+        this.disposeGroup(f.group);
+        this.lyricFade = null;
+      }
     }
 
     for (const m of [this.starMat, this.wallMat, this.haloMat]) {
