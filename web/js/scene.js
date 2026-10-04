@@ -454,7 +454,7 @@ export class VisualEngine {
         const e = Math.max(nx, ny);
         // 边缘渐隐 + 中央柔和减光（封面占 MV 宽度的约 22%，这里对正中 30% 区压暗到一半，
         // 否则视频较亮的镜头会把封面粒子冲淡——两者都能看清才是目标）
-        const central = 0.25 + 0.75 * Math.min(1, e / 0.22);  // 封面正后压到 25%：MV 再亮也不糊封面
+        const central = 0.12 + 0.88 * Math.min(1, e / 0.20);  // 封面正后压到 12%：MV 再亮也不糊封面
         this.videoFade[i] = (1 - Math.min(1, Math.max(0, (e - 0.82) / 0.18)) ** 1.5) * central;
       }
       this.videoGeo = g;
@@ -467,7 +467,7 @@ export class VisualEngine {
       this.scene.add(this.videoPoints);
       this.videoLast = 0;
       this.videoUrl = null;
-      this.videoAlpha = 1.35;              // MV 亮度系数（用户要求"更亮、清晰可见"；中央有 50% 减光保护封面）
+      this.videoAlpha = 1.35;              // MV 亮度系数（用户要求"更亮、清晰可见"；封面正后另有 88% 减光保护封面）
     }
 
     // ---- 后期 ----
