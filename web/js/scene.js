@@ -108,33 +108,34 @@ const VERT_COVER = /* glsl */ `
     vec3 p = mix(aScatter, aHome, e);
 
     vec3 outward = normalize(vec3(aHome.xy, 5.0));
-    p += outward * uBass * (7.0 + 7.0 * aSeed) * e;
+    p += outward * uBass * (5.0 + 5.0 * aSeed) * e;
 
-    p += vec3(fract(aSeed*13.1)-0.5, fract(aSeed*29.7)-0.5, fract(aSeed*7.3)-0.5) * uTreble * 3.4 * e;
-
-    p.z += sin(uTime * 1.5 + aSeed * 26.0) * uMid * 4.0 * e;
-    p.y += sin(uTime * 0.9 + aHome.x * 0.12) * uMid * 1.6 * e;
-
-    // ---- 形态不再方正：切比雪夫距离 → 0 中心 / 1 边缘；边缘粒子更"松" ----
+    // ---- 先把"内外圈"算出来：0 = 内区（锁死）／1 = 最外圈（负责扩散）----
     float rn = max(abs(aHome.x), abs(aHome.y)) / max(uHalfW, 1.0);
-    vEdge = smoothstep(0.40, 1.02, rn);
+    vEdge = smoothstep(0.62, 1.00, rn);        // 内侧 ~62% 完全不动 → 保证清晰
+    float react = mix(0.22, 1.0, vEdge);       // 内区只留一点点音频反应
 
-    // 边缘常年带着一点飘移，轮廓就化在浮尘里了
+    p += vec3(fract(aSeed*13.1)-0.5, fract(aSeed*29.7)-0.5, fract(aSeed*7.3)-0.5) * uTreble * 2.6 * react * e;
+
+    p.z += sin(uTime * 1.5 + aSeed * 26.0) * uMid * 3.0 * react * e;
+    p.y += sin(uTime * 0.9 + aHome.x * 0.12) * uMid * 1.2 * react * e;
+
+    // 外圈常驻摆动（内区为 0，所以中间不会晃）
     vec3 edgeDir = normalize(vec3(aHome.xy, 2.5));
     float wob = sin(uTime * 0.55 + aSeed * 47.0) * 0.5 + sin(uTime * 0.23 + aSeed * 91.0) * 0.5;
-    p += edgeDir * wob * (0.4 + vEdge * 7.5) * e;
+    p += edgeDir * wob * vEdge * 9.0 * e;
 
-    // ---- 熵增：每颗粒子有自己的周期，会离开封面飘进空间，再自己回来 ----
+    // ---- 熵增：只有外圈粒子会离家飘进空间，再自己回来；内区永不动 ----
     float cyc = fract(uTime * 0.034 + fract(aSeed * 13.7));
     float pulse = pow(max(0.0, sin(cyc * 6.2831853)), 10.0);
-    vAway = pulse * (0.30 + vEdge * 0.70) * uEntropy * e;
-    p += edgeDir * vAway * (30.0 + 48.0 * fract(aSeed * 7.7));
+    vAway = pulse * vEdge * uEntropy * e;
+    p += edgeDir * vAway * (34.0 + 52.0 * fract(aSeed * 7.7));
     p += vec3(fract(aSeed*29.7)-0.5, fract(aSeed*53.1)-0.5, fract(aSeed*17.3)-0.5) * vAway * 26.0;
 
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mv;
     gl_PointSize = uSize * uPixel * (300.0 / max(-mv.z, 1.0)) * (0.7 + e * 0.5 + uLevel * 0.6);
-    vAlpha = (0.30 + 0.70 * aSeed) * (1.0 - vEdge * 0.22);      // 边缘本来就淡一点
+    vAlpha = (0.30 + 0.70 * aSeed) * (1.0 - vEdge * 0.28);      // 只有外圈淡
   }
 `;
 const FRAG_COVER = /* glsl */ `
@@ -150,7 +151,7 @@ const FRAG_COVER = /* glsl */ `
     // 飘出去的粒子褪色成暖白 → 看起来就是"扩散进浮尘里的物质"
     vec3 col = mix(vColor, vec3(1.0, 0.93, 0.84), clamp(vAway * 1.6, 0.0, 1.0));
     float fade = 1.0 - clamp(vAway, 0.0, 1.0) * 0.55;
-    gl_FragColor = vec4(col * (0.54 + uLevel * 0.28), m * vAlpha * fade * (0.34 + 0.42 * clamp(uMorph,0.0,1.0) + uLevel * 0.20));
+    gl_FragColor = vec4(col * (0.60 + uLevel * 0.28), m * vAlpha * fade * (0.34 + 0.42 * clamp(uMorph,0.0,1.0) + uLevel * 0.20));
   }
 `;
 
@@ -722,7 +723,7 @@ export class VisualEngine {
 
   /* ---------------------------------------------------------- 封面 → 粒子 */
   /** 把专辑封面采样成粒子云；换歌时从远处飞回来重组（morph 0→1） */
-  async setCoverToParticles(url, { width = 320 } = {}) {
+  async setCoverToParticles(url, { width = 336 } = {}) {
     if (!url) { this.clearCover(); return; }
     let img;
     try {
@@ -772,7 +773,7 @@ export class VisualEngine {
         const cx = Math.abs(x - W / 2) / (W / 2);
         const cy = Math.abs(y - H / 2) / (H / 2);
         const rn0 = Math.max(cx, cy);
-        if (rn0 > 0.80 && Math.random() < (rn0 - 0.80) / 0.20 * 0.62) continue;
+        if (rn0 > 0.86 && Math.random() < (rn0 - 0.86) / 0.14 * 0.45) continue;
         // 亚像素抖动 + 更明显的弧面 → 既有细节又有体积，且不像"整齐的格子"
         const X = (x - W / 2 + 0.5 + (Math.random() - 0.5)) * px;
         const Y = -(y - H / 2 + 0.5 + (Math.random() - 0.5)) * px;
@@ -802,7 +803,7 @@ export class VisualEngine {
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 }, uBass: { value: 0 }, uMid: { value: 0 }, uTreble: { value: 0 },
-        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 0.50 },
+        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 0.44 },
         uHalfW: { value: COVER_W * 0.5 }, uEntropy: { value: 1.0 },
       },
       vertexShader: VERT_COVER,
