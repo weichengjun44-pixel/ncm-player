@@ -413,15 +413,15 @@ export class VisualEngine {
       this.video.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none;z-index:-1';
       document.body.appendChild(this.video);
 
-      this.VW = 320;                       // 采样分辨率（16:9）—— 对齐歌词的颗粒密度
-      this.VH = 180;
+      this.VW = 384;                       // 采样分辨率（16:9）—— 平面放大后同步提密度
+      this.VH = 216;
       this.videoCanvas = document.createElement('canvas');
       this.videoCanvas.width = this.VW;
       this.videoCanvas.height = this.VH;
       this.videoCtx = this.videoCanvas.getContext('2d', { willReadFrequently: true });
 
       const N = this.VW * this.VH;
-      const planeW = 330;                  // 远大于封面(74) → 正面看封面居中嵌在 MV 里
+      const planeW = 480;                  // 铺满整个空间背景（远超盒体 220、封面 74）
       const planeH = planeW * (this.VH / this.VW);
       const pos = new Float32Array(N * 3);
       const col = new Float32Array(N * 3);   // 每帧刷新
@@ -454,7 +454,7 @@ export class VisualEngine {
         const e = Math.max(nx, ny);
         // 边缘渐隐 + 中央柔和减光（封面占 MV 宽度的约 22%，这里对正中 30% 区压暗到一半，
         // 否则视频较亮的镜头会把封面粒子冲淡——两者都能看清才是目标）
-        const central = 0.5 + 0.5 * Math.min(1, e / 0.30);
+        const central = 0.5 + 0.5 * Math.min(1, e / 0.22);   // 封面半宽/MV 半宽 ≈ 0.15
         this.videoFade[i] = (1 - Math.min(1, Math.max(0, (e - 0.82) / 0.18)) ** 1.5) * central;
       }
       this.videoGeo = g;
@@ -463,11 +463,11 @@ export class VisualEngine {
       this.videoPoints = new THREE.Points(g, this.videoMat);
       this.videoPoints.frustumCulled = false;
       this.videoPoints.visible = false;
-      this.videoPoints.position.set(0, 0, -62);      // 封面之后，但没远到看不见细节
+      this.videoPoints.position.set(0, 0, -120);     // 再退远一层：作为空间背景，前景更清爽
       this.scene.add(this.videoPoints);
       this.videoLast = 0;
       this.videoUrl = null;
-      this.videoAlpha = 0.55;              // MV 亮度系数（实测定档：0.2 看不见 / 0.45 可见但压封面 / 0.7 全压）
+      this.videoAlpha = 0.75;              // MV 亮度系数（用户要求再提一点；0.2 看不见 / 0.45 可见 / 0.7 偏压封面）
     }
 
     // ---- 后期 ----

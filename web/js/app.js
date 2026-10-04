@@ -763,6 +763,35 @@ if (new URLSearchParams(location.search).has('probe')) {
         .catch((e) => { info2.textContent = 'stage 出错: ' + e.message; });
     }
 
+    // ---- 亮度网格：把画面缩成 32x18 打 ASCII 图，精确定位"哪一块在发光"（MV 铺到哪了）----
+    {
+      const gcv = document.createElement('canvas');
+      gcv.width = 32; gcv.height = 18;
+      const gcx = gcv.getContext('2d', { willReadFrequently: true });
+      const gridEl = document.createElement('pre');
+      gridEl.id = 'gridOut';
+      gridEl.style.cssText = 'margin:6px 0 0;font-size:10px;line-height:1.05';
+      box.appendChild(gridEl);
+      setInterval(() => {
+        try {
+          const st = document.getElementById('stage');
+          gcx.drawImage(st, 0, 0, 32, 18);
+          const d = gcx.getImageData(0, 0, 32, 18).data;
+          let txt = '';
+          for (let y = 0; y < 18; y++) {
+            let line = '';
+            for (let x = 0; x < 32; x++) {
+              const o = (y * 32 + x) * 4;
+              const l = (d[o] + d[o + 1] + d[o + 2]) / 3;
+              line += l < 2 ? '.' : l < 6 ? ':' : l < 14 ? '+' : l < 30 ? '*' : l < 60 ? '#' : '@';
+            }
+            txt += line + String.fromCharCode(10);
+          }
+          gridEl.textContent = txt;
+        } catch (e) { gridEl.textContent = '网格失败: ' + e.message; }
+      }, 3000);
+    }
+
     // ---- 自截图回传：每 4 秒把画面 POST 回服务端（存 shots/latest.png），便于直接看渲染结果 ----
     let shotN = 0;
     const stageEl = document.getElementById('stage');
