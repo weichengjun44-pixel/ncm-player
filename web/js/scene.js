@@ -464,8 +464,8 @@ export class VisualEngine {
       this.video.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none;z-index:-1';
       document.body.appendChild(this.video);
 
-      this.VW = 672;                       // 采样分辨率（16:9）—— 格子越小画面越细（0.79 → 0.64 单位）
-      this.VH = 378;
+      this.VW = 800;                       // 采样分辨率（16:9）—— 格子再细一档（0.64 → 0.54 单位）
+      this.VH = 450;
       this.videoCanvas = document.createElement('canvas');
       this.videoCanvas.width = this.VW;
       this.videoCanvas.height = this.VH;
@@ -487,7 +487,7 @@ export class VisualEngine {
           pos[i * 3 + 1] = -(y - this.VH / 2 + 0.5) * cellH + (Math.random() - 0.5) * cellH * 0.7;
           pos[i * 3 + 2] = (Math.random() - 0.5) * 2.5;
           seed[i] = Math.random();
-          size[i] = 2.1 + Math.random() * 0.8;   // 随格子同步缩小 → 密度与亮度不变，只是更细
+          size[i] = 1.75 + Math.random() * 0.7;  // 随格子同步缩小 → 密度与亮度不变，只是更细
         }
       }
       const g = new THREE.BufferGeometry();
@@ -860,6 +860,7 @@ export class VisualEngine {
   /* ---------------------------------------------------------- 封面 → 粒子 */
   /** 把专辑封面采样成粒子云；换歌时从远处飞回来重组（morph 0→1） */
   async setCoverToParticles(url, { width = 640 } = {}) {
+    if (this.hideCover) return;              // 盒子3 不要封面
     if (!url) { this.clearCover(); return; }
     let img;
     try {
@@ -980,9 +981,13 @@ export class VisualEngine {
        用户拖动时立刻让位，松手 3.5 秒后重新接管
      - 舞台而不是盒子：曝光更亮、雾更淡、泛光更强，转场像舞台灯位而非黑盒       */
   setBox(mode) {
-    const next = mode === 2 ? 2 : 1;
+    const next = mode === 3 ? 3 : (mode === 2 ? 2 : 1);
     if (next === this.boxMode) return;
+    const prev = this.boxMode;
     this.boxMode = next;
+    // 盒子3 = 盒子1 的样式但不要封面（MV 主体 + 歌词在其下方）
+    this.hideCover = next === 3;
+    if (this.hideCover && this.clearCover) this.clearCover();
     if (next === 2) {
       this.renderer.toneMappingExposure = 1.16;
       if (this.scene.fog) this.scene.fog.density = 0.0014;
@@ -997,6 +1002,8 @@ export class VisualEngine {
       if (this.bloom) { this.bloom.strength = 0.46; this.bloom.threshold = 0.52; }
       this.resetView();
     }
+    // 从盒子3 切回来时恢复封面（app 会在换歌/切盒子时重新取封面）
+    if (prev === 3 && !this.hideCover && this.onLeaveCoverless) this.onLeaveCoverless();
   }
 
   /** 切到某个机位；instant=true 直接到位，否则做 1.1 秒平滑过渡 */
