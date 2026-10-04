@@ -207,6 +207,10 @@ function pointsMaterial(extra = {}) {
   });
 }
 
+/* MV 跟随用的临时对象 */
+const _mvTarget = new THREE.Vector3();
+const _mvOff = new THREE.Vector3();
+
 /* 取色用的临时对象（避免每像素 new） */
 const _tmpSrc = new THREE.Color();
 const _tmpOut = new THREE.Color();
@@ -464,8 +468,8 @@ export class VisualEngine {
       this.videoPoints = new THREE.Points(g, this.videoMat);
       this.videoPoints.frustumCulled = false;
       this.videoPoints.visible = false;
-      this.videoPoints.position.set(0, 0, -260);     // 相机坐标系：永远在视野正中，转视角也不动
-      this.camera.add(this.videoPoints);             // 挂相机 → 固定视角正中（不是世界坐标）
+      this.videoPoints.position.set(0, 0, -260);     // 初始位置，之后每帧由 updateVideoFollow() 跟随相机
+      this.scene.add(this.videoPoints);              // 放场景里（不是相机下）→ 才能做出惯性/甩动效果
       this.videoLast = 0;
       this.videoUrl = null;
       this.videoAlpha = 1.35;              // MV 亮度系数（用户要求"更亮、清晰可见"；封面正后另有 88% 减光保护封面）
@@ -970,6 +974,37 @@ export class VisualEngine {
     }
   }
 
+  /* ---------------------------------------------- MV 平面跟随相机（带惯性）
+     直接把平面挂在相机下会显得"贴在屏幕上"很生硬；这里每帧把它朝"相机前方 260
+     且朝向相机"的目标位姿推进，并留一点滞后与滚转——转动视角时会被甩出去一点再回正。 */
+  updateVideoFollow(dt) {
+    const vp = this.videoPoints;
+    if (!vp || !vp.visible) return;
+    const cam = this.camera;
+
+    // 目标位姿：相机前方 260，朝向与相机一致
+    _mvTarget.set(0, 0, -260).applyQuaternion(cam.quaternion).add(cam.position);
+    vp.position.lerp(_mvTarget, 1 - Math.exp(-dt * 5.0));
+    vp.quaternion.slerp(cam.quaternion, 1 - Math.exp(-dt * 6.5));
+
+    // 限制最大偏离：猛拉视角时背景不至于飞出画面
+    const MAX_LAG = 115;
+    _mvOff.copy(vp.position).sub(_mvTarget);
+    const off = _mvOff.length();
+    if (off > MAX_LAG) vp.position.copy(_mvTarget).add(_mvOff.multiplyScalar(MAX_LAG / off));
+
+    // 滚转：由相机的"实际转动角速度"驱动（不依赖内部拖拽变量，任何方式转视角都有效）。
+    // 转得越快歪得越明显，停手后被上面的 slerp 自动拉回。
+    const v = this.view;
+    const dTheta = v.theta - (this._prevTheta === undefined ? v.theta : this._prevTheta);
+    const dPhi = v.phi - (this._prevPhi === undefined ? v.phi : this._prevPhi);
+    this._prevTheta = v.theta;
+    this._prevPhi = v.phi;
+    const angVel = (dTheta + dPhi * 0.6) / Math.max(dt, 1e-4);        // rad/s
+    const roll = Math.max(-0.30, Math.min(0.30, -angVel * 0.16));
+    vp.rotateZ(roll * dt * 12);
+  }
+
   debugInfo() {
     return {
       coverPoints: this.coverPoints,
@@ -1088,6 +1123,8 @@ export class VisualEngine {
       r * Math.sin(v.phi) * Math.sin(v.theta),
     );
     this.camera.lookAt(0, 0, 0);
+
+    this.updateVideoFollow(dt);
 
     this.composer.render();
   }

@@ -795,9 +795,9 @@ if (new URLSearchParams(location.search).has('probe')) {
     // 诊断：20 秒后把视角转 60°、抬升一点 → 验证 MV 是否仍固定在视野正中（封面应随视角偏移）
     if (stageId) {
       setTimeout(() => {
-        const v = window.__ncm.visual.view;
-        v.theta = Math.PI / 2 + 1.05;
-        v.phi = Math.PI / 2 - 0.35;
+        // 连续匀速转视角（模拟真实拖动），便于观察 MV 的惯性/甩动
+        setInterval(() => { window.__ncm.visual.view.theta += 0.06; }, 100);
+        setTimeout(() => { window.__ncm.visual.view.theta += 0; }, 0);
       }, 20000);
     }
 
