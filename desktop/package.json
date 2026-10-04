@@ -1,0 +1,77 @@
+{
+  "name": "nebula-player",
+  "version": "0.1.0",
+  "private": true,
+  "description": "NEBULA 粒子音乐空间（桌面版）",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --x64",
+    "dist:portable": "electron-builder --win portable --x64"
+  },
+  "author": "weichengjun44-pixel",
+  "build": {
+    "appId": "com.nebula.particleplayer",
+    "productName": "NEBULA",
+    "asar": true,
+    "files": [
+      "main.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../web",
+        "to": "app/web"
+      },
+      {
+        "from": "../server.js",
+        "to": "app/server.js"
+      },
+      {
+        "from": "../sources.js",
+        "to": "app/sources.js"
+      },
+      {
+        "from": "../package.json",
+        "to": "app/package.json"
+      },
+      {
+        "from": "../node_modules/three",
+        "to": "app/node_modules/three"
+      },
+      {
+        "from": "../api",
+        "to": "app/api"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "NEBULA-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "NEBULA 粒子音乐空间",
+      "deleteAppDataOnUninstall": false
+    },
+    "directories": {
+      "output": "../dist",
+      "buildResources": "build"
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.4.11"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
+}

@@ -22,7 +22,11 @@ const { PROVIDERS, setAuth, getAuth } = require('./sources');
 
 const PORT = Number(process.env.PORT || 8080);
 const API_BASE = process.env.API_BASE || 'http://127.0.0.1:3000';
-const WEB_DIR = path.join(__dirname, 'web');
+// 可写数据根目录：桌面版由主进程通过 NCM_DATA_DIR 指到 D 盘（打包后安装目录只读）
+// 开发时就是项目根，行为不变
+const DATA_ROOT = process.env.NCM_DATA_DIR || __dirname;
+// 静态资源根：桌面版可能从 asar/资源目录提供
+const WEB_DIR = process.env.NCM_WEB_DIR || path.join(__dirname, 'web');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -56,7 +60,7 @@ process.on('unhandledRejection', (err) => log('!! unhandledRejection:', err && e
    登录凭据（MUSIC_U cookie）
    存本地文件、不进 git、日志里一律脱敏；只在服务端与网易云之间使用。
    ------------------------------------------------------------------ */
-const COOKIE_FILE = path.join(__dirname, '.cookie');
+const COOKIE_FILE = path.join(DATA_ROOT, '.cookie');
 const readCookie = () => { try { return fs.readFileSync(COOKIE_FILE, 'utf8').trim(); } catch { return ''; } };
 const writeCookie = (c) => { try { fs.writeFileSync(COOKIE_FILE, String(c).trim(), { mode: 0o600 }); } catch (e) { log('cookie 保存失败:', e.message); } };
 const dropCookie = () => { try { fs.unlinkSync(COOKIE_FILE); } catch {} };
@@ -302,7 +306,7 @@ const AUTH_KEYS = {
   qq: ['qqmusic_key', 'qm_keyst', 'uin', 'skey', 'p_skey'],
   kugou: ['token', 'userid', 'user_id', 'vip_type', 'kg_mid', 'dfid'],
 };
-const authFile = (src) => path.join(__dirname, '.cookie-' + src);
+const authFile = (src) => path.join(DATA_ROOT, '.cookie-' + src);
 
 function loadAuthCookies() {
   for (const src of AUTH_SOURCES) {
@@ -609,7 +613,7 @@ function handleShot(req, res, url) {
     try {
       const m = /^data:image\/png;base64,(.+)$/.exec(body.trim());
       if (!m) { sendJson(res, 400, { ok: false, err: 'expect png data url' }); return; }
-      const dir = path.join(__dirname, 'shots');
+      const dir = path.join(DATA_ROOT, 'shots');
       fs.mkdirSync(dir, { recursive: true });
       const buf = Buffer.from(m[1], 'base64');
       const tag = (url.searchParams.get('tag') || 'latest').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 24) || 'latest';

@@ -11,3 +11,9 @@ Thumbs.db
 # 第三方网易云 API 服务（单独 clone，不纳入本仓库）
 api/
 shots/
+
+# 桌面版（Electron）：依赖与打包产物
+desktop/node_modules/
+dist/
+desktop/.cache/
+desktop/build/*.png

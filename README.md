@@ -242,3 +242,44 @@ MIT
 - 酷狗：二维码接口 `login-user.kugou.com/v2/qrcode` 一直返回 `error_code 20010`。
   公开实现里提到要先 `/register/dev` 注册设备拿 `dfid`（且 mid 要用 uuid 的 md5 转大整数），
   但该路径现在 404，尝试 6 轮未打通。
+
+## 桌面版（Electron）
+
+把浏览器里那套原样装进一个原生窗口，不用再手动起服务。
+
+```bash
+cd desktop
+npm install          # 首次装 electron（国内的坑见下）
+npm start            # 直接跑
+npm run dist         # 打包 NSIS 安装包 → ../dist/NEBULA-Setup-0.1.0.exe
+```
+
+**设计取舍**
+
+- **界面零重写**：`web/` 原样作为渲染层，窗口只是把 `http://127.0.0.1:8080` 装进 BrowserWindow
+- **中间层同进程**：主进程直接 `require('../server.js')`，不另起进程
+- **网易云 API 用 Electron 自带的 Node 当子进程**（`ELECTRON_RUN_AS_NODE=1`），
+  打包后不依赖用户自己装 Node
+- **端口复用**：8080/3000 已有实例在跑就直接复用，不抢端口（开发时常见）
+- **单实例锁**：重复双击只把已有窗口提到前面，不会开出第二个播放器
+
+**用户数据全在 D 盘**（`NEBULA_DATA` 可改，默认 `D:\NebulaPlayer`）：
+
+```
+D:\NebulaPlayer\
+  data\        登录 Cookie（.cookie / .cookie-qq / .cookie-kugou）、截图
+  userData\    Chromium 缓存
+  logs\  session\
+```
+
+必须外置的原因：打包后应用文件在 `asar` 里**只读**，Cookie 和截图写不进去；
+同时符合「C 盘不留东西」的要求。
+
+**国内装 electron 的坑（踩过）**：新版 npm 有安装脚本白名单，electron 的 postinstall
+（真正下载二进制那步）会被拦下，表现为"包装上了但 electron.exe 不存在"。需要：
+
+```bash
+export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
+npm install-scripts approve electron       # 放行 postinstall
+npm rebuild electron --foreground-scripts  # 重新触发下载
+```
