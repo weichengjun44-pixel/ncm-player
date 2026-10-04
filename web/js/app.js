@@ -679,6 +679,18 @@ if (new URLSearchParams(location.search).has('probe')) {
              '  歌词区 .center bottom=' + (ctr ? getComputedStyle(ctr).bottom : '?') +
              '  歌词块 y=' + (lw ? Math.round(lw.getBoundingClientRect().top) + '-' + Math.round(lw.getBoundingClientRect().bottom) : '?') +
              ' 视口高=' + innerHeight);
+    // 模拟滚轮 → 验证能一路钻到封面内部
+    const cvEl = document.querySelector('canvas');
+    const rr = () => (window.__ncm && window.__ncm.visual ? Math.round(window.__ncm.visual.view.radius) : -1);
+    if (cvEl) {
+      const r0 = rr();
+      for (let i = 0; i < 40; i++) {
+        cvEl.dispatchEvent(new WheelEvent('wheel', { deltaY: -240, bubbles: true, cancelable: true }));
+      }
+      out.push('滚轮模拟(40 次上推): radius ' + r0 + ' -> ' + rr());
+      const cover = window.__ncm.visual.coverPoints;
+      out.push('封面粒子数=' + cover + '  相机半径=' + rr());
+    }
     const hits = [];
     document.querySelectorAll('body *').forEach((el) => {
       const r = el.getBoundingClientRect();

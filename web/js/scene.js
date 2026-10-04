@@ -73,8 +73,8 @@ const VERT_POINTS = /* glsl */ `
     }
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mv;
-    gl_PointSize = aSize * uPixel * (300.0 / max(-mv.z, 1.0)) * (1.0 + uLevel * 0.7);
-    vAlpha = 0.18 + 0.82 * aSeed;
+    gl_PointSize = min(aSize * uPixel * (300.0 / max(-mv.z, 1.0)) * (1.0 + uLevel * 0.7), 4.0 * uPixel);
+    vAlpha = (0.18 + 0.82 * aSeed) * mix(1.0, 0.42, smoothstep(150.0, 22.0, -mv.z));   // 贴脸时压暗，别糊成一片白
   }
 `;
 const FRAG_POINTS = /* glsl */ `
@@ -134,8 +134,8 @@ const VERT_COVER = /* glsl */ `
 
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mv;
-    gl_PointSize = uSize * uPixel * (300.0 / max(-mv.z, 1.0)) * (0.7 + e * 0.5 + uLevel * 0.6);
-    vAlpha = (0.72 + 0.28 * aSeed) * (1.0 - vEdge * 0.28);      // 抖动收窄 → 少颗粒噪点、更"实"
+    gl_PointSize = min(uSize * uPixel * (300.0 / max(-mv.z, 1.0)) * (0.7 + e * 0.5 + uLevel * 0.6), 4.0 * uPixel);
+    vAlpha = (0.72 + 0.28 * aSeed) * (1.0 - vEdge * 0.28) * mix(1.0, 0.42, smoothstep(150.0, 22.0, -mv.z));
   }
 `;
 const FRAG_COVER = /* glsl */ `
@@ -146,12 +146,12 @@ const FRAG_COVER = /* glsl */ `
   varying float vEdge;
   void main() {
     float d = length(gl_PointCoord - 0.5);
-    float m = smoothstep(0.5, 0.38, d);          // 近乎实心圆点：细节最锐（软边会糊成一团光）
+    float m = smoothstep(0.5, 0.44, d);          // 更硬：细节最锐（软边会糊成一团光）
     if (m <= 0.004) discard;
     // 飘出去的粒子褪色成暖白 → 看起来就是"扩散进浮尘里的物质"
     vec3 col = mix(vColor, vec3(1.0, 0.93, 0.84), clamp(vAway * 1.6, 0.0, 1.0));
     float fade = 1.0 - clamp(vAway, 0.0, 1.0) * 0.55;
-    gl_FragColor = vec4(col * (0.60 + uLevel * 0.28), m * vAlpha * fade * (0.08 + 0.11 * clamp(uMorph,0.0,1.0) + uLevel * 0.09));
+    gl_FragColor = vec4(col * (0.60 + uLevel * 0.28), m * vAlpha * fade * (0.052 + 0.072 * clamp(uMorph,0.0,1.0) + uLevel * 0.06));
   }
 `;
 
@@ -504,7 +504,9 @@ export class VisualEngine {
     });
     el.addEventListener('wheel', (e) => {
       e.preventDefault();
-      this.view.radius = Math.max(120, Math.min(520, this.view.radius + e.deltaY * 0.12));
+      // 比例式缩放：远处一步跨度大、近处很细腻（deltaY>0 是拉远）
+      const k = Math.exp(e.deltaY * 0.0011);
+      this.view.radius = Math.max(4, Math.min(520, this.view.radius * k));
     }, { passive: false });
     el.addEventListener('dblclick', () => this.resetView());
   }
@@ -787,7 +789,7 @@ export class VisualEngine {
 
   /* ---------------------------------------------------------- 封面 → 粒子 */
   /** 把专辑封面采样成粒子云；换歌时从远处飞回来重组（morph 0→1） */
-  async setCoverToParticles(url, { width = 512 } = {}) {
+  async setCoverToParticles(url, { width = 640 } = {}) {
     if (!url) { this.clearCover(); return; }
     let img;
     try {
@@ -839,8 +841,8 @@ export class VisualEngine {
         const rn0 = Math.max(cx, cy);
         if (rn0 > 0.92 && Math.random() < (rn0 - 0.92) / 0.08 * 0.18) continue;   // 只啃最外 8%，轮廓保持锐
         // 亚像素抖动 + 更明显的弧面 → 既有细节又有体积，且不像"整齐的格子"
-        const X = (x - W / 2 + 0.5 + (Math.random() - 0.5)) * px;
-        const Y = -(y - H / 2 + 0.5 + (Math.random() - 0.5)) * px;
+        const X = (x - W / 2 + 0.5 + (Math.random() - 0.5) * 0.7) * px;
+        const Y = -(y - H / 2 + 0.5 + (Math.random() - 0.5) * 0.7) * px;
         const R2 = (X * X + Y * Y) / (planeW * planeW * 0.25);
         const Z = (1 - Math.min(R2, 1)) * 5.0 + (Math.random() - 0.5) * 0.7;
         homes.push(X, Y, Z);
@@ -1065,7 +1067,7 @@ export class VisualEngine {
       v.theta += v.vTheta;
       v.phi = Math.max(0.22, Math.min(Math.PI - 0.22, v.phi + v.vPhi));
       v.vTheta *= 0.93; v.vPhi *= 0.93;
-      if (this.time - this.lastDrag > 2.5 && Math.abs(v.vTheta) < 0.002) v.theta += dt * 0.035;
+      if (this.time - this.lastDrag > 2.5 && Math.abs(v.vTheta) < 0.002 && v.radius > 40) v.theta += dt * 0.035;
     }
     const r = v.radius - kick * 2.5;
     this.camera.position.set(
