@@ -109,14 +109,28 @@ async function proxyApi(req, res, url) {
   }
 }
 
-/** 取歌曲真实播放地址（走 API 服务，带登录 cookie 才有高音质/VIP） */
-async function resolveSongUrl(id, level = 'exhigh') {
+/** 取歌曲真实播放地址 + 格式（带登录 cookie 才有高音质/VIP） */
+async function resolveSong(id, level = 'exhigh') {
   const target = `${API_BASE}/song/url/v1?id=${encodeURIComponent(id)}&level=${level}`;
   const r = await fetch(withCookie(target));
   const j = await r.json();
   const item = Array.isArray(j.data) ? j.data[0] : null;
-  return item && item.url ? item.url : null;
+  if (!item || !item.url) return null;
+  // level 是 flac 时网易云可能回落成 mp3，所以以返回的 url 后缀为准
+  const guess = (item.type || '').toLowerCase() || (item.url.match(/\.(flac|mp3|m4a|aac)(?:\?|$)/i) || [])[1] || '';
+  return { url: item.url, type: guess.toLowerCase(), br: item.br || 0, size: item.size || 0 };
 }
+
+const AUDIO_MIME = {
+  flac: 'audio/flac',
+  mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
+  mp4: 'audio/mp4',
+  aac: 'audio/aac',
+  wav: 'audio/wav',
+  ogg: 'audio/ogg',
+  ape: 'audio/x-ape',
+};
 
 /** 把远端音频流按 Range 转发给浏览器（带上网易云要求的 Referer） */
 async function proxyStream(req, res, url) {
@@ -124,13 +138,14 @@ async function proxyStream(req, res, url) {
   const level = url.searchParams.get('level') || 'exhigh';
   if (!id) return send(res, 400, 'missing id');
 
-  let src;
+  let info;
   try {
-    src = await resolveSongUrl(id, level);
+    info = await resolveSong(id, level);
   } catch (err) {
     return send(res, 502, 'resolve failed: ' + err.message);
   }
-  if (!src) return send(res, 404, '该歌曲没有可播放地址（可能需要登录或版权受限）');
+  if (!info) return send(res, 404, '该歌曲没有可播放地址（可能需要登录或版权受限）');
+  const src = info.url;
 
   const headers = {
     'User-Agent':
@@ -146,10 +161,13 @@ async function proxyStream(req, res, url) {
       return send(res, 502, '音频源返回 ' + upstream.status);
     }
     const outHeaders = {
-      'Content-Type': upstream.headers.get('content-type') || 'audio/mpeg',
+      // 网易云 CDN 对 flac 也会报 audio/mpeg，这里按实际格式纠正，否则浏览器可能拒播
+      'Content-Type': AUDIO_MIME[info.type] || upstream.headers.get('content-type') || 'audio/mpeg',
       'Accept-Ranges': 'bytes',
       'Access-Control-Allow-Origin': '*',
       'Cache-Control': 'no-store',
+      'X-Audio-Type': info.type || '',
+      'X-Audio-Bitrate': String(info.br || ''),
     };
     const len = upstream.headers.get('content-length');
     const range = upstream.headers.get('content-range');
@@ -295,6 +313,25 @@ async function handleAuth(req, res, url, p) {
       log('已退出登录（本地 cookie 已删除）');
       return sendJson(res, 200, { ok: true });
     }
+
+    // 我的歌单（含"我喜欢的音乐"），登录后才可用
+    if (p === '/api/me/playlists') {
+      if (!readCookie()) return sendJson(res, 200, { ok: false, logged: false, playlists: [] });
+      const st = await apiGet('/login/status?timestamp=' + Date.now());
+      const uid = st && st.data && st.data.profile && st.data.profile.userId;
+      if (!uid) return sendJson(res, 200, { ok: false, logged: false, playlists: [] });
+      const j = await apiGet(`/user/playlist?uid=${uid}&limit=100&timestamp=${Date.now()}`);
+      const list = ((j && j.playlist) || []).map((pl) => ({
+        id: pl.id,
+        name: pl.name,
+        cover: pl.coverImgUrl,
+        count: pl.trackCount,
+        creator: (pl.creator && pl.creator.nickname) || '',
+        subscribed: !!pl.subscribed,
+      }));
+      const liked = list.find((x) => x.name.includes('喜欢的音乐'));
+      return sendJson(res, 200, { ok: true, logged: true, uid, liked: liked || null, playlists: list });
+    }
   } catch (err) {
     log('登录接口异常:', err.message);
     if (!res.headersSent) return sendJson(res, 502, { ok: false, error: err.message });
@@ -312,7 +349,9 @@ const server = http.createServer((req, res) => {
       return sendJson(res, 200, { ok: true, api: API_BASE, port: PORT });
     }
     if (p.startsWith('/vendor/three/')) return serveVendor(req, res, url);
-    if (p.startsWith('/api/login/') || p === '/api/logout') return void handleAuth(req, res, url, p);
+    if (p.startsWith('/api/login/') || p === '/api/logout' || p === '/api/me/playlists') {
+      return void handleAuth(req, res, url, p);
+    }
     if (p.startsWith('/api/')) return void proxyApi(req, res, url);
     if (p === '/stream') return void proxyStream(req, res, url);
     if (p === '/cover') return void proxyCover(req, res, url);

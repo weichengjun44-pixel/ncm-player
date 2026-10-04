@@ -60,21 +60,23 @@
   <!-- 左侧列表 -->
   <aside class="panel" id="panel">
     <div class="panel-head">
-      <span id="panelTitle">搜索结果</span>
+      <div class="tabs">
+        <button id="tabMine" class="tab">我的音乐</button>
+        <button id="tabSearch" class="tab active">搜索</button>
+      </div>
       <button id="panelToggle" class="ghost" title="收起/展开">−</button>
     </div>
+    <div class="panel-sub" id="panelSub"></div>
     <div id="list" class="list"></div>
-    <div class="panel-foot">
-      <label class="file">
-        <input id="lrcFile" type="file" accept=".lrc,text/plain" hidden />
-      </label>
-    </div>
   </aside>
 
-  <!-- 中央信息 + 歌词 -->
+  <!-- 歌词区（重做：加暗底衬，可读性优先） -->
   <section class="center" id="center">
-    <div id="lyricNow" class="lrc-now"></div>
-    <div id="lyricNext" class="lrc-next"></div>
+    <div class="lrc-wrap">
+      <div id="lyricPrev" class="lrc-prev"></div>
+      <div id="lyricNow" class="lrc-now"></div>
+      <div id="lyricNext" class="lrc-next"></div>
+    </div>
   </section>
 
   <!-- 底部控制台 -->
@@ -116,10 +118,13 @@
       <div class="pills">
         <button id="mode" class="pill" title="播放模式">列表循环</button>
         <button id="level" class="pill" title="音质">极高</button>
-        <button id="vis" class="pill" title="切换视觉模式">星云</button>
+        <button id="reset" class="pill" title="把视角复位到正面">复位视角</button>
       </div>
     </div>
   </footer>
+
+  <!-- 调试信息（?debug=1 时显示） -->
+  <div id="dbg" class="dbg"></div>
 
   <!-- 提示 -->
   <div id="toast" class="toast"></div>
@@ -139,6 +144,8 @@
         }
         b.textContent = '⚠ ' + msg + '   （点击关闭）';
         b.style.display = 'block';
+        clearTimeout(b._t);
+        b._t = setTimeout(function () { b.style.display = 'none'; }, 8000);
       }
       window.addEventListener('error', function (e) {
         if (e && e.message) {

@@ -151,26 +151,71 @@ button.ghost:hover { color: var(--accent); border-color: rgba(110, 231, 255, 0.4
 }
 .list .empty { color: var(--dim2); font-size: 12.5px; text-align: center; padding: 28px 10px; line-height: 1.9; }
 
-/* ---------------- 中央歌词 ---------------- */
+/* ---------------- 歌词区（可读性优先）---------------- */
 .center {
   position: fixed; z-index: 15;
-  left: 50%; top: 47%; transform: translate(-50%, -50%);
-  width: min(78vw, 900px);
-  text-align: center; pointer-events: none;
+  left: 50%; bottom: 152px; transform: translateX(-50%);
+  width: min(84vw, 780px);
+  pointer-events: none;
+}
+.lrc-wrap {
+  position: relative; padding: 20px 30px 18px;
+  border-radius: 22px;
+  background: radial-gradient(120% 130% at 50% 40%, rgba(4, 7, 18, 0.74) 0%, rgba(4, 7, 18, 0.52) 55%, rgba(4, 7, 18, 0) 100%);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  text-align: center;
+}
+.lrc-prev {
+  font-size: clamp(11px, 1.05vw, 13.5px);
+  color: rgba(190, 210, 245, 0.42);
+  line-height: 1.7; letter-spacing: 0.02em;
+  height: 1.7em; overflow: hidden;
 }
 .lrc-now {
-  font-size: clamp(20px, 3.4vw, 42px);
-  font-weight: 650; letter-spacing: 0.02em; line-height: 1.45;
-  text-shadow: 0 0 26px rgba(110, 231, 255, 0.5), 0 0 70px rgba(167, 139, 250, 0.35);
-  transition: opacity 0.4s ease, transform 0.4s ease;
+  font-size: clamp(22px, 2.9vw, 38px);
+  font-weight: 750; letter-spacing: 0.01em; line-height: 1.42;
+  color: #ffffff;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.85), 0 0 26px rgba(110, 231, 255, 0.55), 0 0 60px rgba(167, 139, 250, 0.3);
+  margin: 6px 0 4px;
+  transition: opacity 0.28s ease, transform 0.28s ease;
   opacity: 0;
 }
 .lrc-now.show { opacity: 1; }
 .lrc-next {
-  margin-top: 16px; font-size: clamp(12px, 1.3vw, 15px); color: var(--dim);
-  letter-spacing: 0.06em; opacity: 0; transition: opacity 0.4s;
+  font-size: clamp(12.5px, 1.35vw, 16px);
+  color: rgba(210, 228, 255, 0.58);
+  line-height: 1.75; letter-spacing: 0.02em;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.8);
+  opacity: 0; transition: opacity 0.35s;
+  height: 1.75em; overflow: hidden;
 }
-.lrc-next.show { opacity: 0.75; }
+.lrc-next.show { opacity: 1; }
+
+/* 面板标签页 */
+.tabs { display: flex; gap: 6px; }
+.tab {
+  background: none; border: 1px solid transparent; color: var(--dim2);
+  font-size: 12px; letter-spacing: 0.1em; padding: 4px 10px; border-radius: 999px;
+  cursor: pointer; transition: all 0.2s;
+}
+.tab:hover { color: var(--dim); }
+.tab.active { color: var(--accent); border-color: rgba(110, 231, 255, 0.4); background: rgba(110, 231, 255, 0.08); }
+.panel-sub {
+  padding: 0 16px 8px; font-size: 11px; color: var(--dim2); letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--line);
+}
+.panel-sub:empty { display: none; }
+
+/* 调试条 */
+.dbg {
+  position: fixed; z-index: 45; left: 22px; bottom: 152px;
+  display: none; font-family: ui-monospace, Consolas, monospace; font-size: 11px;
+  color: #9fe8ff; background: rgba(6, 10, 22, 0.72); border: 1px solid var(--line);
+  padding: 6px 10px; border-radius: 10px; line-height: 1.6; backdrop-filter: blur(8px);
+  white-space: pre;
+}
+.dbg.show { display: block; }
 
 /* ---------------- 底部控制台 ---------------- */
 .bottom {

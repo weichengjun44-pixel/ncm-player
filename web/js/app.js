@@ -14,7 +14,9 @@ const els = {
   play: $('#play'), icoPlay: $('#icoPlay'), icoPause: $('#icoPause'),
   prev: $('#prev'), next: $('#next'), bar: $('#bar'), fill: $('#fill'), knob: $('#knob'),
   cur: $('#cur'), dur: $('#dur'), vol: $('#vol'), mode: $('#mode'), level: $('#level'),
-  vis: $('#vis'), toast: $('#toast'), lrcNow: $('#lyricNow'), lrcNext: $('#lyricNext'),
+  vis: $('#vis'), reset: $('#reset'), dbg: $('#dbg'), toast: $('#toast'),
+  lrcNow: $('#lyricNow'), lrcNext: $('#lyricNext'), lrcPrev: $('#lyricPrev'),
+  tabMine: $('#tabMine'), tabSearch: $('#tabSearch'), panelSub: $('#panelSub'),
   acct: $('#acct'), acctText: $('#acctText'), loginMask: $('#loginMask'), loginClose: $('#loginClose'),
   qrBox: $('#qrBox'), qrStatus: $('#qrStatus'), acctInfo: $('#acctInfo'), logoutBtn: $('#logoutBtn'),
 };
@@ -91,14 +93,14 @@ function resumeCtx() {
 
 /* ----------------------------------------------------------- 视觉 */
 const visual = new VisualEngine($('#stage'));
-window.addEventListener('vis-mode', (e) => (els.vis.textContent = e.detail));
-els.vis.addEventListener('click', () => {
-  els.vis.textContent = visual.nextMode();
+els.reset.addEventListener('click', () => {
+  visual.resetView();
+  toast('视角已复位（画面里拖动可 360° 环绕，滚轮推拉）');
 });
 
 /* ----------------------------------------------------------- 列表渲染 */
 function renderList(title, items, { highlightId } = {}) {
-  els.panelTitle.textContent = title;
+  if (els.panelSub) els.panelSub.textContent = title;
   els.list.innerHTML = '';
   if (!items.length) {
     els.list.innerHTML = '<div class="empty">没有结果<br/>换个关键词试试</div>';
@@ -172,7 +174,8 @@ function playIndex(i) {
     const proxied = '/cover?url=' + encodeURIComponent(song.cover);
     els.cover.src = proxied;
     els.cover.onload = () => els.cover.classList.add('ok');
-    visual.setCover(proxied);
+    // 封面 → 粒子：同源代理后取像素，采样成上万颗粒子
+    visual.setCoverToParticles(proxied).catch((e) => console.warn('封面粒子化失败', e));
   } else {
     visual.clearCover();
   }
@@ -282,6 +285,8 @@ function tickLyrics() {
   state.lrcIndex = idx;
   const cur = state.lyrics[idx];
   const nxt = state.lyrics[idx + 1];
+  const prev = idx > 0 ? state.lyrics[idx - 1] : null;
+  els.lrcPrev.textContent = prev ? prev.text : '';
   if (cur) {
     els.lrcNow.textContent = cur.text;
     els.lrcNow.classList.add('show');
@@ -405,6 +410,9 @@ els.searchForm.addEventListener('submit', async (e) => {
   if (!kw) return;
   els.panel.classList.remove('collapsed');
   els.panelToggle.textContent = '−';
+  els.tabSearch.classList.add('active');
+  els.tabMine.classList.remove('active');
+  state.tab = 'search';
   els.list.innerHTML = '<div class="empty">搜索中…</div>';
   try {
     const j = await api(`/search?keywords=${encodeURIComponent(kw)}&type=1&limit=30`);
@@ -437,7 +445,7 @@ function applyAccount(profile, account) {
   const vip = (profile && profile.vipType) || (account && account.vipType) || 0;
   els.acct.classList.toggle('on', state.loggedIn);
   if (state.loggedIn) {
-    const av = profile.avatarUrl ? `<img src="${profile.avatarUrl}" alt="">` : '';
+    const av = profile.avatarUrl ? `<img src="/cover?url=${encodeURIComponent(profile.avatarUrl)}" alt="" onerror="this.style.display='none'">` : '';
     const badge = vip > 0 ? '<span class="vip">VIP</span>' : '';
     els.acct.innerHTML = `${av}<span class="acct-dot"></span><span>${escapeHtml(profile.nickname || '已登录')}</span>${badge}`;
   } else {
@@ -449,7 +457,9 @@ function applyAccount(profile, account) {
       `<div>${escapeHtml(profile.nickname || '')} ${vip > 0 ? '<span class="vip">VIP</span>' : ''}</div>` +
       `<div class="sub">UID ${profile.userId} · 音质上限 ${vip > 0 ? '无损 / 高解析度' : '极高'}</div>`;
     els.logoutBtn.style.display = 'inline-block';
-    els.qrBox.innerHTML = profile.avatarUrl ? `<img src="${profile.avatarUrl}" alt="头像">` : '<div class="qr-loading">已登录</div>';
+    els.qrBox.innerHTML = profile.avatarUrl
+      ? `<img src="/cover?url=${encodeURIComponent(profile.avatarUrl)}" alt="头像" onerror="this.replaceWith(document.createTextNode('已登录'))">`
+      : '<div class="qr-loading">已登录</div>';
     els.qrStatus.className = 'qr-status ok';
     els.qrStatus.textContent = '已登录';
   } else {
@@ -487,6 +497,7 @@ async function loadQr() {
           toast(`已登录：${nick}${isVip ? ' · 黑胶VIP' : ''}（可切无损音质了）`);
           setTimeout(() => els.loginMask.classList.remove('show'), 1200);
           if (state.current) reloadCurrent();     // 之前因版权/VIP 失败的曲目现在能放了
+          if (state.tab === 'mine') loadMyPlaylists();   // 正在看"我的音乐"就刷新
         } else if (r.code === 802) {
           els.qrStatus.textContent = '已扫码，请在手机上确认';
         } else if (r.code === 800) {
@@ -530,6 +541,81 @@ els.logoutBtn.addEventListener('click', async () => {
   loadQr();
 });
 
+/* ----------------------------------------------------------- 我的音乐（歌单） */
+async function loadMyPlaylists() {
+  els.list.innerHTML = '<div class="empty">读取你的歌单…</div>';
+  els.panelSub.textContent = '';
+  try {
+    const j = await api('/me/playlists');
+    if (!j.logged) {
+      els.list.innerHTML = '<div class="empty">还没登录网易云<br/><br/>点右上角「未登录」扫码<br/>就能看到你的歌单和「我喜欢的音乐」</div>';
+      return;
+    }
+    state.playlists = j.playlists || [];
+    if (!state.playlists.length) {
+      els.list.innerHTML = '<div class="empty">没读到歌单</div>';
+      return;
+    }
+    els.panelSub.textContent = `我的音乐 · 共 ${state.playlists.length} 个歌单`;
+    els.list.innerHTML = '';
+    state.playlists.forEach((pl, i) => {
+      const div = document.createElement('div');
+      div.className = 'item';
+      div.innerHTML = `
+        <span class="idx">${i + 1}</span>
+        <span class="txt">
+          <span class="n">${escapeHtml(pl.name)}</span>
+          <span class="a">${pl.count} 首${pl.subscribed ? ' · 收藏' : ''}</span>
+        </span>`;
+      div.addEventListener('click', () => openPlaylist(pl));
+      els.list.appendChild(div);
+    });
+    state.likedPlaylist = j.liked || null;
+  } catch (e) {
+    els.list.innerHTML = '<div class="empty">读取失败：' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+async function openPlaylist(pl) {
+  els.panelSub.textContent = `${pl.name} · 载入中…`;
+  els.list.innerHTML = '<div class="empty">正在拉取《' + escapeHtml(pl.name) + '》…</div>';
+  try {
+    const j = await api('/playlist/detail?id=' + pl.id);
+    const tracks = (j.playlist?.tracks || []).map(normalizeSong);
+    if (!tracks.length) {
+      els.list.innerHTML = '<div class="empty">这个歌单没有曲目</div>';
+      return;
+    }
+    state.queue = tracks;
+    state.playlistName = pl.name;
+    renderList(`${pl.name} · ${tracks.length} 首`, tracks);
+    toast(`《${pl.name}》已载入 ${tracks.length} 首，点任意一首开始`);
+  } catch (e) {
+    els.list.innerHTML = '<div class="empty">拉取失败：' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+function setTab(which) {
+  state.tab = which;
+  els.tabMine.classList.toggle('active', which === 'mine');
+  els.tabSearch.classList.toggle('active', which === 'search');
+  if (which === 'mine') loadMyPlaylists();
+  else if (state.queue.length) renderList(state.playlistName || '当前列表', state.queue);
+  else els.list.innerHTML = '<div class="empty">搜一首歌开始吧</div>';
+}
+els.tabMine.addEventListener('click', () => setTab('mine'));
+els.tabSearch.addEventListener('click', () => setTab('search'));
+
+/* ----------------------------------------------------------- 调试条 */
+if (new URLSearchParams(location.search).has('debug')) {
+  els.dbg.classList.add('show');
+  setInterval(() => {
+    const d = visual.debugInfo();
+    els.dbg.textContent =
+      `封面粒子 ${d.coverPoints}\n${d.fps} fps · 视角 θ=${d.theta} r=${d.radius}\n能量 ${d.level}`;
+  }, 600);
+}
+
 /* ----------------------------------------------------------- 首屏推荐 */
 async function boot() {
   refreshAccount();                 // 先看有没有登录态
@@ -558,7 +644,7 @@ window.addEventListener('keydown', (e) => {
   else if (e.code === 'ArrowUp') { e.preventDefault(); els.vol.value = Math.min(1, Number(els.vol.value) + 0.05); audio.volume = Number(els.vol.value); }
   else if (e.code === 'ArrowDown') { e.preventDefault(); els.vol.value = Math.max(0, Number(els.vol.value) - 0.05); audio.volume = Number(els.vol.value); }
   else if (e.key === 'f' || e.key === 'F') els.q.focus();
-  else if (e.key === 'v' || e.key === 'V') document.getElementById('vis').click();
+  else if (e.key === 'r' || e.key === 'R') { visual.resetView(); toast('视角已复位'); }
 });
 
 /* ----------------------------------------------------------- 帧循环 */
