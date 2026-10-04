@@ -459,10 +459,10 @@ export class VisualEngine {
         const nx = Math.abs(px / (this.VW - 1) * 2 - 1);
         const ny = Math.abs(py / (this.VH - 1) * 2 - 1);
         const e = Math.max(nx, ny);
-        // 边缘渐隐 + 中央柔和减光（封面占 MV 宽度的约 22%，这里对正中 30% 区压暗到一半，
-        // 否则视频较亮的镜头会把封面粒子冲淡——两者都能看清才是目标）
-        const central = 0.12 + 0.88 * Math.min(1, Math.max(0, (e - 0.30) / 0.12));  // 封面范围(≤0.30)只留 12%，外圈迅速全亮
-        this.videoFade[i] = (1 - Math.min(1, Math.max(0, (e - 0.82) / 0.18)) ** 1.5) * central;
+        // 只保留边缘渐隐（外圈 18% 淡出，避免出现生硬的"视频方块"）。
+        // 中央减光已按需求移除：原来封面正后被压到 12% 来保护封面，但在画面正中形成了
+        // 一块长方形暗区（用户报的"长方形黑洞"），现在 MV 整块连续铺满。
+        this.videoFade[i] = 1 - Math.min(1, Math.max(0, (e - 0.82) / 0.18)) ** 1.5;
       }
       this.videoGeo = g;
       // uSwirl 必须为 0：这是给星场/浮尘的绕 Y 轴自转，但对 MV 这块平面是灾难——
