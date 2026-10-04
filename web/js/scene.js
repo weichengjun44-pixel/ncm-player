@@ -135,7 +135,7 @@ const VERT_COVER = /* glsl */ `
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mv;
     gl_PointSize = uSize * uPixel * (300.0 / max(-mv.z, 1.0)) * (0.7 + e * 0.5 + uLevel * 0.6);
-    vAlpha = (0.30 + 0.70 * aSeed) * (1.0 - vEdge * 0.28);      // 只有外圈淡
+    vAlpha = (0.72 + 0.28 * aSeed) * (1.0 - vEdge * 0.28);      // 抖动收窄 → 少颗粒噪点、更"实"
   }
 `;
 const FRAG_COVER = /* glsl */ `
@@ -151,7 +151,7 @@ const FRAG_COVER = /* glsl */ `
     // 飘出去的粒子褪色成暖白 → 看起来就是"扩散进浮尘里的物质"
     vec3 col = mix(vColor, vec3(1.0, 0.93, 0.84), clamp(vAway * 1.6, 0.0, 1.0));
     float fade = 1.0 - clamp(vAway, 0.0, 1.0) * 0.55;
-    gl_FragColor = vec4(col * (0.60 + uLevel * 0.28), m * vAlpha * fade * (0.34 + 0.42 * clamp(uMorph,0.0,1.0) + uLevel * 0.20));
+    gl_FragColor = vec4(col * (0.60 + uLevel * 0.28), m * vAlpha * fade * (0.08 + 0.11 * clamp(uMorph,0.0,1.0) + uLevel * 0.09));
   }
 `;
 
@@ -787,7 +787,7 @@ export class VisualEngine {
 
   /* ---------------------------------------------------------- 封面 → 粒子 */
   /** 把专辑封面采样成粒子云；换歌时从远处飞回来重组（morph 0→1） */
-  async setCoverToParticles(url, { width = 336 } = {}) {
+  async setCoverToParticles(url, { width = 512 } = {}) {
     if (!url) { this.clearCover(); return; }
     let img;
     try {
@@ -837,7 +837,7 @@ export class VisualEngine {
         const cx = Math.abs(x - W / 2) / (W / 2);
         const cy = Math.abs(y - H / 2) / (H / 2);
         const rn0 = Math.max(cx, cy);
-        if (rn0 > 0.86 && Math.random() < (rn0 - 0.86) / 0.14 * 0.45) continue;
+        if (rn0 > 0.92 && Math.random() < (rn0 - 0.92) / 0.08 * 0.18) continue;   // 只啃最外 8%，轮廓保持锐
         // 亚像素抖动 + 更明显的弧面 → 既有细节又有体积，且不像"整齐的格子"
         const X = (x - W / 2 + 0.5 + (Math.random() - 0.5)) * px;
         const Y = -(y - H / 2 + 0.5 + (Math.random() - 0.5)) * px;
@@ -867,7 +867,7 @@ export class VisualEngine {
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 }, uBass: { value: 0 }, uMid: { value: 0 }, uTreble: { value: 0 },
-        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 0.44 },
+        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 0.62 },
         uHalfW: { value: COVER_W * 0.5 }, uEntropy: { value: 1.0 },
       },
       vertexShader: VERT_COVER,
