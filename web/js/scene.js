@@ -187,10 +187,15 @@ const FRAG_LYRIC = /* glsl */ `
   varying float vAlpha;
   void main() {
     float d = length(gl_PointCoord - 0.5);
-    float m = smoothstep(0.5, 0.33, d);          // 硬边 → 笔画清晰，不发糊
-    if (m <= 0.01) discard;
-    // 亮度压到 0.38：低于泛光阈值起跳点，叠加后也不会糊成一片白
-    gl_FragColor = vec4(vColor * 0.38, m * vAlpha * 0.70 * clamp(uMorph, 0.0, 1.0));
+    float edge = smoothstep(0.50, 0.34, d);        // 外缘硬边 → 笔画清晰
+    if (edge <= 0.01) discard;
+    float core = smoothstep(0.40, 0.10, d);        // 字芯：实心
+    // 星河流舞台的做法：字芯提白、边缘保留歌词配色，克制辉光、绝不允许发灰
+    vec3 col = mix(vColor, vec3(1.0), core * 0.90);        // 字芯提白 → 更清晰、不发灰
+    // 总亮度与旧版持平（0.44×0.58 ≈ 0.38×0.70）：白芯是靠"配色替换"实现的，不是靠加亮。
+    // 关键：4 倍粒子重叠后叠加值必须仍低于泛光阈值，否则整行会糊成一条白光（踩过这个坑）。
+    gl_FragColor = vec4(col * (0.24 + core * 0.20),
+                        edge * vAlpha * (0.36 + core * 0.22) * clamp(uMorph, 0.0, 1.0));
   }
 `;
 
@@ -208,6 +213,16 @@ function pointsMaterial(extra = {}) {
 }
 
 /* MV 跟随用的临时对象 */
+/* 盒子2「电影镜头」机位表：电影感来自"硬切 + 缓慢推拉"，都是安全的正面/斜侧视角 */
+const CINEMA_SHOTS = [
+  { theta: Math.PI / 2, phi: Math.PI / 2, radius: 200 },              // 正面标准
+  { theta: Math.PI / 2 + 0.55, phi: Math.PI / 2 - 0.16, radius: 165 },// 3/4 左，推近
+  { theta: Math.PI / 2 - 0.75, phi: Math.PI / 2 + 0.10, radius: 230 },// 右侧远景
+  { theta: Math.PI / 2, phi: Math.PI / 2 - 0.34, radius: 150 },       // 俯一点的近景
+  { theta: Math.PI / 2 + 1.15, phi: Math.PI / 2, radius: 205 },       // 侧向
+  { theta: Math.PI / 2, phi: Math.PI / 2 + 0.28, radius: 255 },       // 仰视远景
+];
+
 const _mvTarget = new THREE.Vector3();
 const _mvOff = new THREE.Vector3();
 const _mvAxis = new THREE.Vector3();
@@ -239,6 +254,15 @@ export class VisualEngine {
     this._fpsN = 0;
 
     this.view = { theta: 0.5, phi: 1.25, radius: 200, vTheta: 0, vPhi: 0 };
+
+    // ---- 空间盒子：1 = 自由视角（默认）／2 = 电影镜头舞台 ----
+    this.boxMode = 1;
+    this.shotIndex = 0;
+    this.shotFrom = null;
+    this.shotTo = null;
+    this.shotT = 1;        // 机位切换过渡进度（1 = 已到位）
+    this.shotHold = 0;     // 距上次切镜的秒数
+    this.kick = 0;
     this.dragging = false;
     this.lastDrag = 0;
     this.pointer = new THREE.Vector2();
@@ -536,7 +560,9 @@ export class VisualEngine {
   }
 
   onResize() {
-    const w = window.innerWidth, h = window.innerHeight;
+    const w = Math.max(1, Math.round(this.canvas.clientWidth || window.innerWidth));
+    const h = Math.max(1, Math.round(this.canvas.clientHeight || window.innerHeight));
+    this._lastW = w; this._lastH = h;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
@@ -923,6 +949,70 @@ export class VisualEngine {
 
   /* ---------------------------------------------------------- MV 视频 → 粒子 */
   /** 挂一支 MV（同源 /mv?id=... 流），用它实时驱动背后的粒子幕 */
+  /* ------------------------------------------------ 空间盒子（1 自由 / 2 电影镜头舞台）
+     盒子2 的视觉语言（照 Mineradio 的风格重写，非移植代码）：
+     - 电影镜头：机位硬切（节拍触发，最短间隔 6 秒）+ 到位后的缓慢推拉；
+       用户拖动时立刻让位，松手 3.5 秒后重新接管
+     - 舞台而不是盒子：曝光更亮、雾更淡、泛光更强，转场像舞台灯位而非黑盒       */
+  setBox(mode) {
+    const next = mode === 2 ? 2 : 1;
+    if (next === this.boxMode) return;
+    this.boxMode = next;
+    if (next === 2) {
+      this.renderer.toneMappingExposure = 1.16;
+      if (this.scene.fog) this.scene.fog.density = 0.0014;
+      if (this.bloom) { this.bloom.strength = 0.55; this.bloom.threshold = 0.62; }   // 泛光阈值抬高：只有真正的亮核发光
+      this.shotIndex = 0;
+      this.cutToShot(0, true);
+      this.dragging = false;
+      this.lastDrag = -99;                 // 允许立即接管
+    } else {
+      this.renderer.toneMappingExposure = 1.05;
+      if (this.scene.fog) this.scene.fog.density = 0.0024;
+      if (this.bloom) { this.bloom.strength = 0.46; this.bloom.threshold = 0.52; }
+      this.resetView();
+    }
+  }
+
+  /** 切到某个机位；instant=true 直接到位，否则做 1.1 秒平滑过渡 */
+  cutToShot(i, instant = false) {
+    const n = CINEMA_SHOTS.length;
+    this.shotIndex = ((i % n) + n) % n;
+    const a = CINEMA_SHOTS[this.shotIndex];
+    this.shotTo = { theta: a.theta, phi: a.phi, radius: a.radius };
+    if (instant) {
+      this.view.theta = a.theta; this.view.phi = a.phi; this.view.radius = a.radius;
+      this.shotFrom = { ...this.shotTo };
+      this.shotT = 1;
+    } else {
+      this.shotFrom = { theta: this.view.theta, phi: this.view.phi, radius: this.view.radius };
+      this.shotT = 0;
+    }
+    this.shotHold = 0;
+  }
+
+  updateCinemaCamera(dt) {
+    const v = this.view;
+    if (!this.shotTo) return;
+    if (this.dragging) { this.lastDrag = this.time; return; }     // 拖动时让位
+    if (this.time - this.lastDrag < 3.5) return;                  // 松手 3.5 秒后接管
+    this.shotHold += dt;
+    if (this.shotT >= 1 && this.kick > 0.5 && this.shotHold > 6) this.cutToShot(this.shotIndex + 1);
+    if (this.shotT < 1) {
+      this.shotT = Math.min(1, this.shotT + dt / 1.1);
+      const e = this.shotT * this.shotT * (3 - 2 * this.shotT);
+      v.theta = this.shotFrom.theta + (this.shotTo.theta - this.shotFrom.theta) * e;
+      v.phi = this.shotFrom.phi + (this.shotTo.phi - this.shotFrom.phi) * e;
+      v.radius = this.shotFrom.radius + (this.shotTo.radius - this.shotFrom.radius) * e;
+    } else {
+      // 到位后缓慢推拉 + 轻微摇移：电影镜头的"活"
+      const a = CINEMA_SHOTS[this.shotIndex];
+      v.theta = a.theta + Math.sin(this.time * 0.11) * 0.06;
+      v.phi = a.phi + Math.sin(this.time * 0.083) * 0.03;
+      v.radius = a.radius * (1 + Math.sin(this.time * 0.19) * 0.05);
+    }
+  }
+
   attachVideo(url, startAt = 0) {
     if (!this.video) return;
     if (this.videoUrl === url && this.videoPoints.visible) return;
@@ -1132,9 +1222,19 @@ export class VisualEngine {
     }
     if (this.cornerPoints) this.cornerPoints.material.opacity = 0.5 + kick * 0.4;
 
-    // 视角：拖拽惯性 + 闲置自动慢转
+    this.kick = kick;
+
+    // 画布尺寸自检：不依赖 resize 事件——预览窗格/面板折叠等布局变化若不触发 resize，
+    // 相机的宽高比就会过期，整个场景被横向拉伸（实测踩到过：0.717 的画布配 1.036 的相机）
+    if ((this._frame = (this._frame || 0) + 1) % 20 === 0) {
+      const cw = this.canvas.clientWidth, ch = this.canvas.clientHeight;
+      if (cw && ch && (cw !== this._lastW || ch !== this._lastH)) this.onResize();
+    }
+    // 视角：盒子2 走电影镜头；盒子1 走拖拽惯性 + 闲置自动慢转
     const v = this.view;
-    if (!this.dragging) {
+    if (this.boxMode === 2) {
+      this.updateCinemaCamera(dt);
+    } else if (!this.dragging) {
       v.theta += v.vTheta;
       v.phi = Math.max(0.22, Math.min(Math.PI - 0.22, v.phi + v.vPhi));
       v.vTheta *= 0.93; v.vPhi *= 0.93;

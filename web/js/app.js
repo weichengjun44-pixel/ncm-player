@@ -9,7 +9,7 @@ const $ = (s) => document.querySelector(s);
 const audio = $('#audio');
 const els = {
   boot: $('#boot'), list: $('#list'), panel: $('#panel'), panelTitle: $('#panelTitle'),
-  panelToggle: $('#panelToggle'), panelPeek: $('#panelPeek'), q: $('#q'), searchForm: $('#searchForm'),
+  panelToggle: $('#panelToggle'), panelPeek: $('#panelPeek'), boxToggle: $('#boxToggle'), q: $('#q'), searchForm: $('#searchForm'),
   cover: $('#cover'), coverBox: $('#coverBox'), title: $('#title'), artist: $('#artist'),
   play: $('#play'), icoPlay: $('#icoPlay'), icoPause: $('#icoPause'),
   prev: $('#prev'), next: $('#next'), bar: $('#bar'), fill: $('#fill'), knob: $('#knob'),
@@ -418,6 +418,25 @@ els.panelToggle.addEventListener('click', () => {
   els.panelToggle.textContent = els.panel.classList.contains('collapsed') ? '+' : '−';
 });
 
+/* ----------------------------------------------------------- 空间盒子切换 */
+const BOX_KEY = 'ncm.box';
+function applyBox(n, announce = false) {
+  const mode = n === 2 ? 2 : 1;
+  if (visual.setBox) visual.setBox(mode);
+  els.boxToggle.textContent = '盒子 ' + mode;
+  els.boxToggle.classList.toggle('active', mode === 2);
+  try { localStorage.setItem(BOX_KEY, String(mode)); } catch {}
+  if (announce) toast(mode === 2 ? '盒子 2 · 电影镜头舞台' : '盒子 1 · 自由视角');
+}
+els.boxToggle.addEventListener('click', () => {
+  applyBox(visual.boxMode === 2 ? 1 : 2, true);
+});
+try {
+  const saved = Number(localStorage.getItem(BOX_KEY) || 1);
+  if (saved === 2) applyBox(2);
+  else applyBox(1);
+} catch { applyBox(1); }
+
 els.panelPeek.addEventListener('click', () => {
   els.panel.classList.remove('collapsed');
   els.panelToggle.textContent = '−';
@@ -733,7 +752,17 @@ if (new URLSearchParams(location.search).has('probe')) {
       if (q.get('swirl') && window.__ncm.visual.videoMat) {
         window.__ncm.visual.videoMat.uniforms.uSwirl.value = Number(q.get('swirl'));
       }
-      window.__ncm.visual.dragging = true;      // 冻结自动慢转，否则视角会飘
+      const wantBox = Number(q.get('box') || 1);
+      if (wantBox === 2 && window.__ncm.visual.setBox) {
+        window.__ncm.visual.setBox(2);          // 盒子2：放开冻结，让电影镜头跑起来
+      } else {
+        window.__ncm.visual.dragging = true;    // 盒子1：冻结自动慢转，截图可比
+      }
+      // 诊断：盒子2 无音频时 kick 恒为 0（不会触发节拍切镜），这里每 9 秒手动切一次机位，
+      // 便于截图验证"电影镜头"的机位变化与过渡
+      if (wantBox === 2) {
+        setInterval(() => window.__ncm.visual.cutToShot(window.__ncm.visual.shotIndex + 1), 9000);
+      }
     }
 
     // 诊断用：直接点第 5 首（带 MV）→ 触发封面/歌词/MV 加载。
