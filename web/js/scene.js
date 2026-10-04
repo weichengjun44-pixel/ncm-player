@@ -939,17 +939,12 @@ export class VisualEngine {
        用户拖动时立刻让位，松手 3.5 秒后重新接管
      - 舞台而不是盒子：曝光更亮、雾更淡、泛光更强，转场像舞台灯位而非黑盒       */
   setBox(mode) {
-    const next = (mode === 2 || mode === 3 || mode === 4) ? mode : 1;
+    const next = mode === 3 ? 3 : (mode === 2 ? 2 : 1);
     if (next === this.boxMode) return;
     const prev = this.boxMode;
     this.boxMode = next;
-    // 盒子3 = 盒子1 不要封面；盒子4 = 盒子3 + MV 缩成正中一块平面（歌词就在它下方）
-    this.hideCover = next === 3 || next === 4;
-    if (this.videoMat) {
-      if (next === 4) this.buildVideoGrid(420, 236, 96);          // 小平面 → 采样提高（格子 0.23 单位）+ 点径放大
-
-      else if (prev === 4) { this.buildVideoGrid(800, 450, 430); this.videoAlpha = 1.35; }   // 离开盒子4 → 恢复整屏与亮度
-    }
+    // 盒子3 = 盒子1 的样式但不要封面（MV 铺满 + 歌词在其下方）
+    this.hideCover = next === 3;
     if (this.hideCover && this.clearCover) this.clearCover();
     if (next === 2) {
       this.renderer.toneMappingExposure = 1.16;
@@ -966,7 +961,7 @@ export class VisualEngine {
       this.resetView();
     }
     // 从盒子3 切回来时恢复封面（app 会在换歌/切盒子时重新取封面）
-    if ((prev === 3 || prev === 4) && !this.hideCover && this.onLeaveCoverless) this.onLeaveCoverless();
+    if (prev === 3 && !this.hideCover && this.onLeaveCoverless) this.onLeaveCoverless();
   }
 
   /** 切到某个机位；instant=true 直接到位，否则做 1.1 秒平滑过渡 */
@@ -1114,7 +1109,7 @@ export class VisualEngine {
     const size = new Float32Array(N);
     const cellW = planeW / vw;
     const cellH = planeH / vh;
-    const k = (cellW / 0.5375) * (this.boxMode === 4 ? 1.7 : 1.0);   // 盒子4 的小平面要靠点径重叠才成片
+    const k = cellW / 0.5375;              // 点径按格子等比（基准 430/800）
     for (let y = 0; y < vh; y++) {
       for (let x = 0; x < vw; x++) {
         const i = y * vw + x;
@@ -1149,14 +1144,6 @@ export class VisualEngine {
   updateVideoFollow(dt) {
     const vp = this.videoPoints;
     if (!vp || !vp.visible) return;
-
-    // 盒子4：MV 就是正中一块固定平面（不跟相机）→ 歌词排在它下方，视角绕着它转
-    if (this.boxMode === 4) {
-      this.videoAlpha = 0.62;          // 粒子更密更大，单颗压低才不过曝（总量≈一块普通屏幕）
-      vp.position.set(0, 0, -2);
-      vp.quaternion.identity();
-      return;
-    }
 
     const cam = this.camera;
 
