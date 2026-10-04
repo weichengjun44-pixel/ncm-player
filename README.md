@@ -410,3 +410,21 @@ Node ≥22.15 有原生 zstd（走原生分支）；**Electron 自带的是 Node
 `web/manifest.webmanifest` + `web/icons/`（192/512/180，脚本 `services/make-pwa-icons.py` 可重生成）。
 注意 `server.js` 的 MIME 表里给 `.webmanifest` 指定了 `application/manifest+json` ——
 Chrome 对清单的 MIME 是**硬校验**，返回 `application/octet-stream` 会直接拒绝清单，装不上。
+
+### 全屏（HTTP 下的关键，不是锦上添花）
+
+**HTTP 访问装不了真 PWA**：Chrome 的「安装应用」要求 HTTPS（或 localhost），放在 `http://192.168.x.x:8080/`
+这种地址上只能"添加到主屏幕"生成一个普通书签，打开还是带地址栏的浏览器。
+
+但 **Fullscreen API 不受 HTTPS 限制** —— 所以手机端的观感靠自建全屏拿到：
+控制栏右侧的全屏按钮（或按 `F`），带 `navigationUI:'hide'`（安卓 Chrome 认这个参数，用来藏状态栏）。
+选择记在 localStorage，下次进来自动恢复到全屏（全屏必须由用户手势触发，所以挂在"第一次点击/触摸"上，
+和用户本来就要点播放这个动作重合，不额外打扰）。
+
+屏幕常亮的 Wake Lock 同样需要 HTTPS，代码里 try/catch 了 —— 现在不生效，**万一以后挂到 HTTPS 就自动生效**。
+
+### 手机访问（二维码）
+
+`python services/make-qr.py` 生成 `dist/qr/nebula-lan.png` 和 `nebula-zerotier.png`。
+不依赖 PIL（取 QR 矩阵后自己写 PNG），生成后有往返比对校验（像素级对比 + 三个定位角），
+因为自己写编码器就有写坏的风险，不能只看"文件生成了"。

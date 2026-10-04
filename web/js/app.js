@@ -1231,3 +1231,70 @@ boot();
 
 // 方便调试
 window.__ncm = { state, audio, visual };
+
+/* ==================================================================
+   全屏 / 屏幕常亮
+   为什么要自己做全屏：HTTP 访问下 Chrome 不提供 PWA 安装（安装要求 HTTPS），
+   也没有真·全屏；但 Fullscreen API 不受 HTTPS 限制，所以手机上靠它拿到
+   "没有地址栏"的观感 —— 这是手机端体验的关键，不是锦上添花。
+   ================================================================== */
+const FS_KEY = 'nebula.fullscreen';
+const fsBtn = document.getElementById('fs');
+const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+
+function syncFsIcon() {
+  const on = isFs();
+  const a = document.getElementById('icoFsOn'), b = document.getElementById('icoFsOff');
+  if (a) a.style.display = on ? 'none' : '';
+  if (b) b.style.display = on ? '' : 'none';
+  if (fsBtn) fsBtn.title = on ? '退出全屏 (F)' : '全屏 (F)';
+}
+
+async function toggleFs(force) {
+  const want = (force === undefined) ? !isFs() : force;
+  try {
+    if (want) {
+      const el = document.documentElement;
+      const req = el.requestFullscreen || el.webkitRequestFullscreen;
+      // navigationUI:'hide' 只有安卓 Chrome 认，用来藏掉状态栏/导航栏
+      await req.call(el, { navigationUI: 'hide' });
+    } else if (isFs()) {
+      const ex = document.exitFullscreen || document.webkitExitFullscreen;
+      await ex.call(document);
+    }
+  } catch (e) { /* 用户拒绝或浏览器不支持，静默 */ }
+  try { localStorage.setItem(FS_KEY, want ? '1' : '0'); } catch (e) {}
+  syncFsIcon();
+}
+
+if (fsBtn) fsBtn.addEventListener('click', () => toggleFs());
+document.addEventListener('fullscreenchange', syncFsIcon);
+document.addEventListener('webkitfullscreenchange', syncFsIcon);
+document.addEventListener('keydown', (e) => {
+  const t = (e.target && e.target.tagName) || '';
+  if (!/INPUT|TEXTAREA/i.test(t) && (e.key === 'f' || e.key === 'F')) toggleFs();
+});
+// 上次是全屏状态的话，进来后自动恢复 —— 全屏必须由用户手势触发，
+// 所以挂到"第一次点击/触摸"上（和用户本来就要点播放这个动作重合，不额外打扰）
+try {
+  if (localStorage.getItem(FS_KEY) === '1') {
+    const once = () => {
+      document.removeEventListener('pointerdown', once, true);
+      toggleFs(true);
+    };
+    document.addEventListener('pointerdown', once, true);
+  }
+} catch (e) {}
+syncFsIcon();
+
+// 屏幕常亮：Wake Lock 需要 HTTPS，HTTP 下会抛错 —— 失败就算了，不打扰用户；
+// 万一以后挂到 HTTPS（或本地打开）就自动生效
+try {
+  if ('wakeLock' in navigator) {
+    const req = () => navigator.wakeLock.request('screen').catch(() => {});
+    req();
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') req();
+    });
+  }
+} catch (e) {}

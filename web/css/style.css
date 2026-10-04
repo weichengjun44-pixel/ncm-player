@@ -448,6 +448,9 @@ button.ghost:hover { color: var(--accent); border-color: rgba(255, 196, 107, 0.4
   /* 触摸目标不小于 44px（这是可用性的硬线，不是美观问题） */
   .ctl { width: 50px; height: 50px; }
   .ctl.main { width: 62px; height: 62px; }
+  /* 手机上 HTTP 装不了真 PWA，全屏按钮是拿到"无地址栏"观感的唯一入口 —— 做得显眼些 */
+  #fs { width: 54px; height: 54px; color: var(--accent); border-color: rgba(255, 196, 107, 0.42); }
+
   .src-pill { padding: 10px 4px; font-size: 13px; }
   .search input { width: 54vw; font-size: 14px; }
   .bottom { grid-template-columns: 1fr; gap: 10px; padding: 10px 12px 14px; }
