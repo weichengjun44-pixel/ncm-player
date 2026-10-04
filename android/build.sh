@@ -65,26 +65,17 @@ CLASSES=$(find "$(pwd -W)/build/classes" -name '*.class')
 "$BT/d8.bat" --release --lib "$AJAR_W" --min-api 24 --output "$OUT_W/dex" $CLASSES
 echo "  ✓ $(ls "$OUT/dex" 2>/dev/null || echo '（没产出 dex）')"
 
-echo "=== 5) classes.dex 装进 APK ==="
+echo "=== 5) classes.dex 装进 APK（用 JDK 自带的 jar，不依赖 python）==="
+# 为什么用 jar 而不是 python/zip：
+#  - python 在服务器上不在 PATH（构建会断在最后一步）
+#  - zip 在 Git-for-Windows 里也没有
+#  - jar 是 JDK 自带，两边都有；实测它【原样保留既有条目的压缩方式】——
+#    resources.arsc 必须保持 STORED（API 30+ 硬要求），这点已验证
 cp "$OUT/base.apk" "$OUT/unsigned.apk"
-( cd "$OUT/dex" && "$BT/../.." >/dev/null 2>&1 || true )
-python - "$OUT_W/unsigned.apk" "$OUT_W/dex/classes.dex" <<'PY'
-import sys, zipfile, shutil
-apk, dex = sys.argv[1], sys.argv[2]
-tmp = apk + '.tmp'
-with zipfile.ZipFile(apk, 'r') as zin, zipfile.ZipFile(tmp, 'w') as zout:
-    for it in zin.infolist():
-        if it.filename == 'classes.dex':
-            continue
-        # 关键：必须沿用每个条目原本的压缩方式。
-        # resources.arsc 在 API 30+ 要求保持 STORED（不压缩）且对齐，重新压缩会导致装不上。
-        zout.writestr(it, zin.read(it.filename), compress_type=it.compress_type)
-    with open(dex, 'rb') as f:
-        # classes.dex 用 STORED：既是最快加载，也避免 zipalign 之后还要改回来
-        zout.writestr(zipfile.ZipInfo('classes.dex'), f.read(), compress_type=zipfile.ZIP_STORED)
-shutil.move(tmp, apk)
-print('  ✓ classes.dex 已写入（原条目压缩方式保持不变）')
-PY
+cp "$OUT/dex/classes.dex" "$OUT/classes.dex"
+( cd "$OUT" && "$JDK_HOME/bin/jar.exe" uf "$OUT_W/unsigned.apk" classes.dex )
+rm -f "$OUT/classes.dex"
+echo "  ✓ classes.dex 已写入"
 
 echo "=== 6) 签名密钥（首次自动生成）==="
 KS="$HERE/nebula.keystore"

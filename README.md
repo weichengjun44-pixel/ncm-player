@@ -514,3 +514,34 @@ bash android/build.sh             # 出 android/build/NEBULA.apk
 写这个检查器时自己踩了一个坑：**importmap 是「最长前缀优先」**，我一开始按字典顺序匹配，
 `three/addons/x` 被 `three` 抢走，拼成了 `three.module.js/addons/x`，得到 4 个假 404。
 检查器本身也必须守规范，否则会带着错误的结论往下走。
+
+## 服务器自给自足（源码 + 工具链 + 构建能力都在服务器上）
+
+DESKTOP-87P9U2C 现在拥有完整的一套，本机（开发机）不参与也能运转：
+
+| 内容 | 位置 |
+|---|---|
+| 运行中的服务 | API :3000 + 中间层 :8080 + 公网隧道（SYSTEM 任务 NEBULA_Services → server-watchdog.ps1） |
+| 项目源码（含 android/ desktop/ .git） | `D:
+ebula` |
+| Node 运行时 | `D:\Apps
+ode
+ode.exe` |
+| JDK 17 | `D:\Apps\jdk17\jdk-17.0.20.1+1` |
+| Android SDK (build-tools 34 / platform 34) | `D:\Appsndroid-sdk` |
+| 签名密钥（覆盖升级必需） | `D:
+ebulandroid
+ebula.keystore` |
+| APK 构建入口 | `D:
+ebula\servicesuild-apk.cmd`（走 Git 自带 bash 跑 android/build.sh，日志在 logspkbuild.log） |
+
+**实测**：在服务器上从零构建出 APK，签名证书 SHA-256 与本机构建完全一致（`74234cad...`），
+所以两边构建的包可以互相覆盖升级。工具链全部由服务器自己下载（dl.google.com 与清华镜像都直连可达，
+实测约 10MB/s，比开发机还快）。
+
+### 构建脚本不依赖 python / zip
+
+第 5 步「把 classes.dex 装进 APK」原本用 python 写（要保留 resources.arsc 的 STORED 状态），
+但服务器上 python 不在 PATH，构建就断在最后一步。改成 **JDK 自带的 `jar uf`** ——
+两边都有，且实测它**原样保留既有条目的压缩方式**（resources.arsc 仍是 STORED）。
+现在整个构建只依赖 JDK + Android SDK，任何机器都能跑。

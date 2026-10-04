@@ -15,11 +15,20 @@ DST="${DST:-D:/nebula}"
 TMP=/tmp/nebula-deploy.tgz
 
 # 运行真正需要的东西（node_modules 里只带 three：中间层的 /vendor/three 从它读）
+# 全量部署：让服务器自给自足（源码 + 构建脚本 + .git 历史都在那边）
 ITEMS=(
   server.js sources.js
-  web services api
+  web services api android desktop .git
   node_modules/three
   LICENSE README.md .gitignore
+)
+# desktop 只带源码：它自己的 node_modules/.cache 是构建产物（700MB+），不值得搬
+EXCLUDES=(
+  --exclude='desktop/node_modules'
+  --exclude='desktop/.cache'
+  --exclude='desktop/dist'
+  --exclude='android/build'
+  --exclude='android/*.keystore'
 )
 
 echo "=== 1) 打包（白名单）==="
@@ -28,7 +37,7 @@ EXIST=()
 for i in "${ITEMS[@]}"; do [ -e "$i" ] && EXIST+=("$i") || echo "  ⚠ 本地缺少 $i（跳过）"; done
 [ -f .cookie ] && EXIST+=(.cookie) || echo "  ⚠ 没有 .cookie（登录凭据未部署）"
 rm -f "$TMP"
-tar czf "$TMP" "${EXIST[@]}"
+tar czf "$TMP" "${EXCLUDES[@]}" "${EXIST[@]}"
 ls -la "$TMP" | awk '{printf "  ✓ 部署包 %.1f MB\n", $5/1048576}'
 
 echo "=== 2) 打包自检（关键文件必须在包里）==="
