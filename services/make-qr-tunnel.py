@@ -7,7 +7,7 @@ import zlib
 import qrcode
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-url = (ROOT / '.tunnel-url').read_text(encoding='utf-8').strip()
+url = (ROOT / '.tunnel-url').read_text(encoding='utf-8-sig').strip()  # utf-8-sig 自动吃掉 BOM
 
 qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=1, border=0)
 qr.add_data(url)

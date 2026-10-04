@@ -428,3 +428,33 @@ Chrome 对清单的 MIME 是**硬校验**，返回 `application/octet-stream` �
 `python services/make-qr.py` 生成 `dist/qr/nebula-lan.png` 和 `nebula-zerotier.png`。
 不依赖 PIL（取 QR 矩阵后自己写 PNG），生成后有往返比对校验（像素级对比 + 三个定位角），
 因为自己写编码器就有写坏的风险，不能只看"文件生成了"。
+
+## 部署到服务器（24 小时那台）
+
+播放器最终跑在 DESKTOP-87P9U2C 上（那台 7x24 开机、不睡眠），本机只用来开发。
+
+结构（全在 D 盘）：`D:
+ebula` 代码 + `D:\Apps
+ode
+ode.exe` 运行时 + `D:\Apps\cloudflared\cloudflared.exe` 隧道。
+
+**开机自启用 SYSTEM 计划任务**（照搬飞书网关那套模式，session 0、不依赖登录）：
+`NEBULA_Services` → `powershell -File D:
+ebula\services\server-watchdog.ps1`，
+由看护负责拉起 API(3000) + 中间层(8080) + 公网隧道。注册用 `services/server-register-task.ps1`。
+
+### 迁移时踩的坑（都很典型）
+
+- **`tar --exclude='dist'` 会排除任意层级的 dist**：本意是排除根目录那个 793MB 的 Electron 构建产物，
+  结果把 `api/node_modules/axios/dist/` 一起排除了 → 服务器上 API 报
+  `Cannot find module .../axios/dist/node/axios.cjs`。压缩包里 4379 项、解出来 3773 项。
+  **必须锚定成 `--exclude='./dist'`**。教训：打包后要核对压缩包内的关键文件，不能只看包生成了。
+- **同名文件互相覆盖**：服务器版看护最初也叫 `watchdog.ps1`，重新解包时被仓库里的 PC 版覆盖回去，
+  于是又用裸 `node`（服务器不在 PATH）→ 服务起不来。改成 `server-watchdog.ps1` 独立命名后根治。
+- **SSH 到 Windows 的坑**：默认 shell 是 PowerShell（不是 cmd），`cd /d x && y` 会报 InvalidEndOfLine；
+  PowerShell 往原生程序喂二进制 stdin 会损坏数据（所以用 scp 传文件而不是 tar 管道）；
+  走 SSH 的 stdout 是 UTF-16/GBK，中文全乱码 —— **可靠做法是让远端写文件再 scp 抓回来读**。
+- **`Get-CimInstance ... -like '*watchdog*'` 自杀**：命令行里同时出现过滤词和脚本路径时，
+  SSH 会话自身的进程也被匹配到并被杀掉，导致后续命令根本没执行。杀进程的过滤条件要避免匹配到自己。
+- **`Set-Content -Encoding UTF8` 会写 BOM**：生成的 .tunnel-url 带 BOM → 二维码里编进一个不可见字符
+  → 扫出来打不开。读取时用 `utf-8-sig`。
