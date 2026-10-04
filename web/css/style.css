@@ -182,15 +182,6 @@ button.ghost:hover { color: var(--accent); border-color: rgba(255, 196, 107, 0.4
   opacity: 0;
 }
 .lrc-now.show { opacity: 1; }
-.lrc-next {
-  font-size: clamp(12.5px, 1.35vw, 16px);
-  color: rgba(226, 214, 196, 0.58);
-  line-height: 1.75; letter-spacing: 0.02em;
-  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.95);
-  opacity: 0; transition: opacity 0.35s;
-  height: 1.75em; overflow: hidden;
-}
-.lrc-next.show { opacity: 1; }
 
 /* 面板标签页 */
 .tabs { display: flex; gap: 6px; }

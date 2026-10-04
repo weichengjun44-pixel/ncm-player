@@ -412,15 +412,15 @@ export class VisualEngine {
       this.video.style.cssText = 'position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
       document.body.appendChild(this.video);
 
-      this.VW = 128;                       // 采样分辨率（16:9）
-      this.VH = 72;
+      this.VW = 192;                       // 采样分辨率（16:9）—— 平面放大后同步提密度
+      this.VH = 108;
       this.videoCanvas = document.createElement('canvas');
       this.videoCanvas.width = this.VW;
       this.videoCanvas.height = this.VH;
       this.videoCtx = this.videoCanvas.getContext('2d', { willReadFrequently: true });
 
       const N = this.VW * this.VH;
-      const planeW = 210;                  // 比封面大得多 → 四周都看得见
+      const planeW = 330;                  // 远大于封面(74) → 正面看封面居中嵌在 MV 里
       const planeH = planeW * (this.VH / this.VW);
       const pos = new Float32Array(N * 3);
       const col = new Float32Array(N * 3);   // 每帧刷新
@@ -435,7 +435,7 @@ export class VisualEngine {
           pos[i * 3 + 1] = -(y - this.VH / 2 + 0.5) * cellH + (Math.random() - 0.5) * cellH * 0.7;
           pos[i * 3 + 2] = (Math.random() - 0.5) * 2.5;
           seed[i] = Math.random();
-          size[i] = 1.0 + Math.random() * 1.4;
+          size[i] = 1.7 + Math.random() * 1.0;
         }
       }
       const g = new THREE.BufferGeometry();
@@ -443,13 +443,23 @@ export class VisualEngine {
       g.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
       g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
       g.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
+      // 边缘渐隐：外圈 18% 逐渐淡出 → 不会出现一块生硬的"视频方块"
+      this.videoFade = new Float32Array(N);
+      for (let i = 0; i < N; i++) {
+        const px = i % this.VW;
+        const py = Math.floor(i / this.VW);
+        const nx = Math.abs(px / (this.VW - 1) * 2 - 1);
+        const ny = Math.abs(py / (this.VH - 1) * 2 - 1);
+        const e = Math.max(nx, ny);
+        this.videoFade[i] = 1 - Math.min(1, Math.max(0, (e - 0.82) / 0.18)) ** 1.5;
+      }
       this.videoGeo = g;
       this.videoMat = pointsMaterial({ uSwirl: { value: 0.004 }, uExpand: { value: 0.06 } });
       this.videoMat.uniforms.uPixel.value = dpr;
       this.videoPoints = new THREE.Points(g, this.videoMat);
       this.videoPoints.frustumCulled = false;
       this.videoPoints.visible = false;
-      this.videoPoints.position.set(0, 0, -78);      // 藏在封面后面
+      this.videoPoints.position.set(0, 0, -62);      // 封面之后，但没远到看不见细节
       this.scene.add(this.videoPoints);
       this.videoLast = 0;
       this.videoUrl = null;
@@ -935,9 +945,10 @@ export class VisualEngine {
       const N = VW * VH;
       for (let i = 0; i < N; i++) {
         const o = i * 4;
-        col[i * 3] = (d[o] / 255) * 0.48;
-        col[i * 3 + 1] = (d[o + 1] / 255) * 0.48;
-        col[i * 3 + 2] = (d[o + 2] / 255) * 0.48;
+        const f = this.videoFade[i] * 0.40;   // 边缘渐隐 + 整体压暗
+        col[i * 3] = (d[o] / 255) * f;
+        col[i * 3 + 1] = (d[o + 1] / 255) * f;
+        col[i * 3 + 2] = (d[o + 2] / 255) * f;
       }
       this.videoGeo.attributes.aColor.needsUpdate = true;
     } catch (e) {

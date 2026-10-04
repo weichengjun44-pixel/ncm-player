@@ -15,7 +15,7 @@ const els = {
   prev: $('#prev'), next: $('#next'), bar: $('#bar'), fill: $('#fill'), knob: $('#knob'),
   cur: $('#cur'), dur: $('#dur'), vol: $('#vol'), mode: $('#mode'), level: $('#level'),
   vis: $('#vis'), reset: $('#reset'), dbg: $('#dbg'), toast: $('#toast'),
-  lrcNow: $('#lyricNow'), lrcNext: $('#lyricNext'), lrcPrev: $('#lyricPrev'),
+  lrcNow: $('#lyricNow'), lrcPrev: $('#lyricPrev'),
   tabMine: $('#tabMine'), tabSearch: $('#tabSearch'), panelSub: $('#panelSub'),
   acct: $('#acct'), acctText: $('#acctText'), loginMask: $('#loginMask'), loginClose: $('#loginClose'),
   qrBox: $('#qrBox'), qrStatus: $('#qrStatus'), acctInfo: $('#acctInfo'), logoutBtn: $('#logoutBtn'),
@@ -266,9 +266,7 @@ async function loadLyrics(id) {
   state.lyrics = [];
   state.lrcIndex = -1;
   els.lrcNow.textContent = '';
-  els.lrcNext.textContent = '';
   els.lrcNow.classList.remove('show');
-  els.lrcNext.classList.remove('show');
   try {
     const j = await api(`/lyric?id=${id}`);
     const raw = (j.lrc && j.lrc.lyric) || '';
@@ -316,11 +314,9 @@ function tickLyrics() {
   const line = cur ? cur.text : (state.current ? state.current.name : '');
   visual.setLyricParticles(line);
 
-  // DOM 只留"下一句"做提示；如果粒子歌词没生成出来，就退回 DOM 显示当前句
+  // 歌词全部交给空间里的粒子显示；DOM 只在粒子没生成出来时兜底，避免黑框/重复
   const particleOk = (visual.lyricPoints || 0) > 0;
   els.lrcPrev.textContent = '';
-  els.lrcNext.textContent = nxt ? nxt.text : '';
-  els.lrcNext.classList.toggle('show', !!nxt);
   if (particleOk) {
     els.lrcNow.textContent = '';
     els.lrcNow.classList.remove('show');
@@ -328,7 +324,6 @@ function tickLyrics() {
     els.lrcNow.textContent = line;
     els.lrcNow.classList.add('show');
   }
-  if (!cur && prev) els.lrcPrev.textContent = prev.text;
 }
 
 /* ----------------------------------------------------------- 进度 / 音量 */
