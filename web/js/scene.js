@@ -18,11 +18,16 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const BANDS = 128;
-const BOX = 42;                 // 盒子半边长
+const BOX = 72;                 // 盒子半边长（做大）
+const COVER_W = 54;             // 封面粒子平面宽度
+const LYRIC_W = 62;             // 歌词粒子平面宽度
 const CYAN = new THREE.Color('#6ee7ff');
 const VIOLET = new THREE.Color('#a78bfa');
 const PINK = new THREE.Color('#ff7ac6');
 const WHITE = new THREE.Color('#eaf2ff');
+
+/** 备用色组：从封面提不出颜色时用它（都是中低亮度的彩色，刻意避开纯白） */
+const FALLBACK_PALETTE = ['#6ee7ff', '#a78bfa', '#ff7ac6', '#4f8cff', '#f7b267', '#63e6be'].map((h) => new THREE.Color(h));
 
 /* ------------------------------------------------------------ 贴图工具 */
 function glowTexture(inner = 'rgba(255,255,255,1)') {
@@ -73,7 +78,8 @@ const FRAG_POINTS = /* glsl */ `
     float d = length(gl_PointCoord - 0.5);
     float m = smoothstep(0.5, 0.02, d);
     if (m <= 0.001) discard;
-    gl_FragColor = vec4(vColor * (0.75 + uLevel * 1.0), m * vAlpha * (0.45 + uLevel * 0.7));
+    // 压亮度：避免叠加后过曝成刺眼的白
+    gl_FragColor = vec4(vColor * (0.60 + uLevel * 0.55), m * vAlpha * (0.34 + uLevel * 0.46));
   }
 `;
 
@@ -114,7 +120,7 @@ const FRAG_COVER = /* glsl */ `
     float d = length(gl_PointCoord - 0.5);
     float m = smoothstep(0.5, 0.03, d);
     if (m <= 0.002) discard;
-    gl_FragColor = vec4(vColor * (0.85 + uLevel * 1.15), m * vAlpha * (0.35 + 0.55 * clamp(uMorph,0.0,1.0) + uLevel * 0.5));
+    gl_FragColor = vec4(vColor * (0.62 + uLevel * 0.6), m * vAlpha * (0.30 + 0.45 * clamp(uMorph,0.0,1.0) + uLevel * 0.4));
   }
 `;
 
@@ -130,6 +136,12 @@ function pointsMaterial(extra = {}) {
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   });
 }
+
+/* 取色用的临时对象（避免每像素 new） */
+const _tmpSrc = new THREE.Color();
+const _tmpOut = new THREE.Color();
+const _hslSrc = { h: 0, s: 0, l: 0 };
+const _hslPal = { h: 0, s: 0, l: 0 };
 
 export class VisualEngine {
   constructor(canvas) {
@@ -150,7 +162,7 @@ export class VisualEngine {
     this._fpsAcc = 0;
     this._fpsN = 0;
 
-    this.view = { theta: 0.5, phi: 1.25, radius: 96, vTheta: 0, vPhi: 0 };
+    this.view = { theta: 0.5, phi: 1.25, radius: 152, vTheta: 0, vPhi: 0 };
     this.dragging = false;
     this.lastDrag = 0;
     this.pointer = new THREE.Vector2();
@@ -189,8 +201,8 @@ export class VisualEngine {
         pos[i * 3] = r * Math.sin(ph) * Math.cos(th);
         pos[i * 3 + 1] = r * Math.cos(ph) * 0.6;
         pos[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
-        c.copy(WHITE).lerp(CYAN, Math.random() * 0.5).lerp(VIOLET, Math.random() * 0.25);
-        col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+        c.copy(CYAN).lerp(VIOLET, Math.random() * 0.8).lerp(WHITE, Math.random() * 0.12);
+        col[i * 3] = c.r * 0.8; col[i * 3 + 1] = c.g * 0.8; col[i * 3 + 2] = c.b * 0.8;
         seed[i] = Math.random();
         size[i] = 1.4 + Math.random() * 3.2;
       }
@@ -205,31 +217,26 @@ export class VisualEngine {
       this.scene.add(this.stars);
     }
 
-    // ---- 盒子：线框 + 内壁浮尘 + 角落光点 ----
+    // ---- 盒子：只留内壁浮尘（边界线按需求隐藏，空间感靠雾与浮尘）----
     {
-      const box = new THREE.BoxGeometry(BOX * 2, BOX * 2, BOX * 2);
-      this.boxEdges = new THREE.LineSegments(
-        new THREE.EdgesGeometry(box),
-        new THREE.LineBasicMaterial({ color: 0x5fd4ff, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending }),
-      );
-      this.scene.add(this.boxEdges);
-
-      const N = 2600;
+      const N = 4200;
       const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
       const seed = new Float32Array(N), size = new Float32Array(N);
       const c = new THREE.Color();
       for (let i = 0; i < N; i++) {
         const face = i % 6;
         const a = (Math.random() * 2 - 1) * BOX, b = (Math.random() * 2 - 1) * BOX;
-        const s = BOX * (0.94 + Math.random() * 0.06);
-        if (face === 0) { pos[i * 3] = s; pos[i * 3 + 1] = a; pos[i * 3 + 2] = b; }
-        else if (face === 1) { pos[i * 3] = -s; pos[i * 3 + 1] = a; pos[i * 3 + 2] = b; }
-        else if (face === 2) { pos[i * 3 + 1] = s; pos[i * 3] = a; pos[i * 3 + 2] = b; }
-        else if (face === 3) { pos[i * 3 + 1] = -s; pos[i * 3] = a; pos[i * 3 + 2] = b; }
-        else if (face === 4) { pos[i * 3 + 2] = s; pos[i * 3] = a; pos[i * 3 + 1] = b; }
-        else { pos[i * 3 + 2] = -s; pos[i * 3] = a; pos[i * 3 + 1] = b; }
+        const s = BOX * (0.9 + Math.random() * 0.1);
+        // 让浮尘不要贴在正中平面上：加一点向内偏移，形成体积
+        const inset = BOX * 0.02 * Math.random();
+        if (face === 0) { pos[i * 3] = s - inset; pos[i * 3 + 1] = a; pos[i * 3 + 2] = b; }
+        else if (face === 1) { pos[i * 3] = -s + inset; pos[i * 3 + 1] = a; pos[i * 3 + 2] = b; }
+        else if (face === 2) { pos[i * 3 + 1] = s - inset; pos[i * 3] = a; pos[i * 3 + 2] = b; }
+        else if (face === 3) { pos[i * 3 + 1] = -s + inset; pos[i * 3] = a; pos[i * 3 + 2] = b; }
+        else if (face === 4) { pos[i * 3 + 2] = s - inset; pos[i * 3] = a; pos[i * 3 + 1] = b; }
+        else { pos[i * 3 + 2] = -s + inset; pos[i * 3] = a; pos[i * 3 + 1] = b; }
         c.copy(CYAN).lerp(VIOLET, Math.random());
-        col[i * 3] = c.r * 0.6; col[i * 3 + 1] = c.g * 0.6; col[i * 3 + 2] = c.b * 0.6;
+        col[i * 3] = c.r * 0.5; col[i * 3 + 1] = c.g * 0.5; col[i * 3 + 2] = c.b * 0.5;
         seed[i] = Math.random();
         size[i] = 1.0 + Math.random() * 2.0;
       }
@@ -238,27 +245,19 @@ export class VisualEngine {
       g.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
       g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
       g.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
-      this.wallMat = pointsMaterial({ uSwirl: { value: 0.01 }, uExpand: { value: 0.1 } });
+      this.wallMat = pointsMaterial({ uSwirl: { value: 0.008 }, uExpand: { value: 0.06 } });
       this.wallMat.uniforms.uPixel.value = dpr;
       this.walls = new THREE.Points(g, this.wallMat);
       this.scene.add(this.walls);
-
-      const corners = [];
-      for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) corners.push([x * BOX, y * BOX, z * BOX]);
-      const cg = new THREE.BufferGeometry();
-      cg.setAttribute('position', new THREE.Float32BufferAttribute(corners.flat(), 3));
-      this.cornerPoints = new THREE.Points(
-        cg,
-        new THREE.PointsMaterial({ size: 3.4, map: glowTexture(), color: 0x9fe8ff, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true }),
-      );
-      this.scene.add(this.cornerPoints);
+      this.boxEdges = null;        // 边界线不显示
+      this.cornerPoints = null;    // 角点也不显示
     }
 
-    // ---- 核心光团 ----
+    // ---- 核心光团（用色组里的颜色，不用纯白）----
     this.core = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: glowTexture(), color: 0xbff2ff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }),
+      new THREE.SpriteMaterial({ map: glowTexture(), color: 0x5fbfe6, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }),
     );
-    this.core.scale.setScalar(20);
+    this.core.scale.setScalar(18);
     this.scene.add(this.core);
 
     // ---- 频谱光环 ----
@@ -319,7 +318,7 @@ export class VisualEngine {
     // ---- 后期 ----
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.0, 0.6, 0.12);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.62, 0.62, 0.32);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
 
@@ -355,13 +354,13 @@ export class VisualEngine {
     });
     el.addEventListener('wheel', (e) => {
       e.preventDefault();
-      this.view.radius = Math.max(52, Math.min(180, this.view.radius + e.deltaY * 0.06));
+      this.view.radius = Math.max(84, Math.min(320, this.view.radius + e.deltaY * 0.09));
     }, { passive: false });
     el.addEventListener('dblclick', () => this.resetView());
   }
 
   resetView() {
-    this.view.theta = 0.5; this.view.phi = 1.25; this.view.radius = 96;
+    this.view.theta = 0.5; this.view.phi = 1.25; this.view.radius = 152;
     this.view.vTheta = 0; this.view.vPhi = 0;
   }
 
@@ -460,6 +459,158 @@ export class VisualEngine {
     this.haloPos.needsUpdate = true;
   }
 
+  /* ---------------------------------------------------------- 色组 */
+  /** 从封面像素里提取色组（调色板）：色相分桶，取权重最高的几桶，
+   *  再统一压成"中低亮度 + 够饱和"的颜色 —— 这就是不晃眼、不廉价的关键 */
+  derivePalette(data, W, H) {
+    const BINS = 24;
+    const bins = new Array(BINS).fill(0);
+    const acc = Array.from({ length: BINS }, () => ({ s: 0, l: 0, n: 0 }));
+    const col = new THREE.Color();
+    const hsl = { h: 0, s: 0, l: 0 };
+    for (let i = 0; i < W * H; i++) {
+      const o = i * 4;
+      if (data[o + 3] / 255 < 0.2) continue;
+      col.setRGB(data[o] / 255, data[o + 1] / 255, data[o + 2] / 255);
+      col.getHSL(hsl);
+      const lum = col.r * 0.2126 + col.g * 0.7152 + col.b * 0.0722;
+      if (lum < 0.05 || lum > 0.985) continue;                 // 纯黑/纯白不进色组
+      const w = Math.pow(hsl.s, 1.4) * (0.35 + lum) + 0.02;
+      const b = Math.min(BINS - 1, Math.floor(hsl.h * BINS));
+      bins[b] += w;
+      acc[b].s += hsl.s; acc[b].l += hsl.l; acc[b].n++;
+    }
+    const out = [];
+    for (const { i } of bins.map((w, i) => ({ i, w })).sort((x, y) => y.w - x.w)) {
+      if (out.length >= 5) break;
+      if (!acc[i].n) continue;
+      const s = acc[i].s / acc[i].n;
+      const l = acc[i].l / acc[i].n;
+      out.push(new THREE.Color().setHSL(
+        (i + 0.5) / BINS,
+        Math.min(0.92, Math.max(0.42, s * 1.15)),
+        Math.min(0.66, Math.max(0.40, l * 0.95)),
+      ));
+    }
+    return out.length >= 3 ? out : FALLBACK_PALETTE.map((c2) => c2.clone());
+  }
+
+  /** 把像素颜色映射到色组：按色相找最近色，亮度按像素明暗微调（上限 0.72，永不发白） */
+  mapToPalette(r, g, b, lum) {
+    const pal = this.palette && this.palette.length ? this.palette : FALLBACK_PALETTE;
+    _tmpSrc.setRGB(r, g, b);
+    _tmpSrc.getHSL(_hslSrc);
+    let best = pal[0], bestD = Infinity;
+    for (const p of pal) {
+      p.getHSL(_hslPal);
+      let d = Math.abs(_hslPal.h - _hslSrc.h);
+      if (d > 0.5) d = 1 - d;                                  // 色相是环形的
+      const score = d + Math.abs(_hslPal.l - _hslSrc.l) * 0.35;
+      if (score < bestD) { bestD = score; best = p; }
+    }
+    best.getHSL(_hslPal);
+    const l = Math.min(0.72, Math.max(0.30, _hslPal.l + (lum - 0.5) * 0.22));
+    return _tmpOut.setHSL(_hslPal.h, _hslPal.s, l);
+  }
+
+  /* ---------------------------------------------------------- 歌词 → 粒子 */
+  /** 把一句歌词栅格化后采样成粒子，浮在空间里（始终朝向相机） */
+  setLyricParticles(text) {
+    const t = (text || '').trim();
+    if (!t) { this.clearLyricParticles(); return; }
+    if (t === this.lyricText) return;
+    this.lyricText = t;
+
+    let FS = 96;
+    const pad = 26;
+    const mctx = document.createElement('canvas').getContext('2d');
+    const fontOf = (size) => `700 ${size}px "PingFang SC","Microsoft YaHei",sans-serif`;
+    mctx.font = fontOf(FS);
+    let textW = Math.ceil(mctx.measureText(t).width);
+    if (textW + pad * 2 > 4096) {                    // 太长的句子按比例缩字号，别被裁掉
+      FS = Math.max(48, Math.floor((FS * (4096 - pad * 2)) / textW));
+      mctx.font = fontOf(FS);
+      textW = Math.ceil(mctx.measureText(t).width);
+    }
+    const font = fontOf(FS);
+    const w = Math.min(4096, textW + pad * 2);
+    const h = Math.ceil(FS * 1.6);
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+    ctx.font = font;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(t, w / 2, h / 2);
+    let img;
+    try {
+      img = ctx.getImageData(0, 0, w, h).data;
+    } catch { return; }
+
+    const step = Math.max(2, Math.round(w / 300));
+    const homes = [], scatters = [], colors = [], seeds = [];
+    const scale = LYRIC_W / w;
+    const pal = this.palette && this.palette.length ? this.palette : FALLBACK_PALETTE;
+    const c = new THREE.Color();
+    for (let y = 0; y < h; y += step) {
+      for (let x = 0; x < w; x += step) {
+        if (img[(y * w + x) * 4 + 3] < 120) continue;
+        homes.push((x - w / 2) * scale, -(y - h / 2) * scale, (Math.random() - 0.5) * 1.6);
+        const rr = 150 + Math.random() * 320;
+        const th = Math.random() * Math.PI * 2, ph = Math.acos(Math.random() * 2 - 1);
+        scatters.push(rr * Math.sin(ph) * Math.cos(th), rr * Math.cos(ph) * 0.6, rr * Math.sin(ph) * Math.sin(th));
+        c.copy(pal[Math.min(pal.length - 1, Math.floor((x / w) * pal.length))]);   // 横向渐变取色组
+        colors.push(c.r, c.g, c.b);
+        seeds.push(Math.random());
+      }
+    }
+    if (homes.length < 60) return;
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(homes, 3));
+    geo.setAttribute('aHome', new THREE.Float32BufferAttribute(homes, 3));
+    geo.setAttribute('aScatter', new THREE.Float32BufferAttribute(scatters, 3));
+    geo.setAttribute('aColor', new THREE.Float32BufferAttribute(colors, 3));
+    geo.setAttribute('aSeed', new THREE.Float32BufferAttribute(seeds, 1));
+
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 }, uBass: { value: 0 }, uMid: { value: 0 }, uTreble: { value: 0 },
+        uLevel: { value: 0 }, uMorph: { value: 0 }, uPixel: { value: this.dpr }, uSize: { value: 1.5 },
+      },
+      vertexShader: VERT_COVER,
+      fragmentShader: FRAG_COVER,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    const pts = new THREE.Points(geo, mat);
+    pts.frustumCulled = false;
+    const group = new THREE.Group();
+    group.add(pts);
+    group.position.set(0, BOX * 0.56, 0);       // 浮在封面上方
+    this.scene.add(group);
+
+    if (this.lyricGroup) {
+      this.scene.remove(this.lyricGroup);
+      this.lyricGroup.traverse((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
+    }
+    this.lyricGroup = group;
+    this.lyricMat = mat;
+    this.lyricMorph = 0;
+    this.lyricPoints = homes.length / 3;
+  }
+
+  clearLyricParticles() {
+    if (this.lyricGroup) {
+      this.scene.remove(this.lyricGroup);
+      this.lyricGroup.traverse((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
+      this.lyricGroup = null;
+      this.lyricMat = null;
+      this.lyricPoints = 0;
+    }
+    this.lyricText = '';
+  }
+
   /* ---------------------------------------------------------- 封面 → 粒子 */
   /** 把专辑封面采样成粒子云；换歌时从远处飞回来重组（morph 0→1） */
   async setCoverToParticles(url, { width = 132 } = {}) {
@@ -492,8 +643,13 @@ export class VisualEngine {
       return;
     }
 
+    // ---- 色组：从封面里提取调色板，再把粒子颜色重映射进去 ----
+    const palette = this.derivePalette(data, W, H);
+    this.palette = palette;
+    if (palette[0]) this.core.material.color.copy(palette[0]).lerp(new THREE.Color('#9fe8ff'), 0.35);
+
     const homes = [], scatters = [], colors = [], seeds = [];
-    const planeW = 40;
+    const planeW = COVER_W;
     const px = planeW / W;
     const c = new THREE.Color();
     for (let y = 0; y < H; y++) {
@@ -502,19 +658,19 @@ export class VisualEngine {
         const r = data[i] / 255, g = data[i + 1] / 255, b = data[i + 2] / 255, a = data[i + 3] / 255;
         if (a < 0.15) continue;
         const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-        if (lum < 0.055) continue;                       // 丢掉纯黑，省点数也更通透
+        if (lum < 0.055) continue;
         const X = (x - W / 2 + 0.5) * px;
         const Y = -(y - H / 2 + 0.5) * px;
         const R2 = (X * X + Y * Y) / (planeW * planeW * 0.25);
-        const Z = (1 - Math.min(R2, 1)) * 3.2;           // 轻微弧面，有体积感
+        const Z = (1 - Math.min(R2, 1)) * 3.2;
         homes.push(X, Y, Z);
 
-        const rr = 240 + Math.random() * 420;             // 从宇宙深处飞来
+        const rr = 240 + Math.random() * 420;
         const th = Math.random() * Math.PI * 2, ph = Math.acos(Math.random() * 2 - 1);
         scatters.push(rr * Math.sin(ph) * Math.cos(th), rr * Math.cos(ph) * 0.7, rr * Math.sin(ph) * Math.sin(th));
 
-        const boost = 1.25 + lum * 0.55;
-        c.setRGB(Math.min(r * boost, 1), Math.min(g * boost, 1), Math.min(b * boost, 1));
+        // 色彩还原：用色组里最接近的颜色，亮度按像素明暗微调（不出现纯白）
+        c.copy(this.mapToPalette(r, g, b, lum));
         colors.push(c.r, c.g, c.b);
         seeds.push(Math.random());
       }
@@ -567,6 +723,8 @@ export class VisualEngine {
   debugInfo() {
     return {
       coverPoints: this.coverPoints,
+      lyricPoints: this.lyricPoints || 0,
+      palette: (this.palette || []).length,
       fps: Math.round(this.fps),
       theta: +this.view.theta.toFixed(2),
       radius: Math.round(this.view.radius),
@@ -602,6 +760,21 @@ export class VisualEngine {
       this.coverGroup.scale.setScalar(1 + bass * 0.05 + kick * 0.02);
     }
 
+    // 歌词粒子：飞入 + 始终朝向相机（任何角度都读得出来）
+    if (this.lyricMat) {
+      this.lyricMorph = Math.min(1, this.lyricMorph + dt / 1.25);
+      this.lyricMat.uniforms.uMorph.value = this.lyricMorph;
+      this.lyricMat.uniforms.uTime.value = this.time;
+      this.lyricMat.uniforms.uBass.value = bass;
+      this.lyricMat.uniforms.uMid.value = mid;
+      this.lyricMat.uniforms.uTreble.value = treble;
+      this.lyricMat.uniforms.uLevel.value = level;
+    }
+    if (this.lyricGroup) {
+      this.lyricGroup.quaternion.copy(this.camera.quaternion);
+      this.lyricGroup.position.y = BOX * 0.56 + Math.sin(this.time * 0.5) * 1.3;
+    }
+
     for (const m of [this.starMat, this.wallMat, this.haloMat]) {
       m.uniforms.uTime.value = this.time;
       m.uniforms.uBass.value = bass;
@@ -610,15 +783,18 @@ export class VisualEngine {
       m.uniforms.uLevel.value = level;
     }
 
-    this.core.scale.setScalar(16 + bass * 34 + kick * 12);
-    this.core.material.opacity = 0.32 + level * 0.4;
+    this.core.scale.setScalar(12 + bass * 24 + kick * 8);
+    this.core.material.opacity = 0.22 + level * 0.3;
 
     this.updateHalo();
     this.updateRipples(dt);
 
-    this.boxEdges.material.opacity = 0.12 + level * 0.22 + kick * 0.1;
-    this.boxEdges.scale.setScalar(1 + bass * 0.012);
-    this.cornerPoints.material.opacity = 0.6 + kick * 0.4;
+    // 边界线已隐藏（按需求），这里不再有盒子描边
+    if (this.boxEdges) {
+      this.boxEdges.material.opacity = 0.1 + level * 0.15;
+      this.boxEdges.scale.setScalar(1 + bass * 0.012);
+    }
+    if (this.cornerPoints) this.cornerPoints.material.opacity = 0.5 + kick * 0.4;
 
     // 视角：拖拽惯性 + 闲置自动慢转
     const v = this.view;

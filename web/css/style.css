@@ -159,11 +159,12 @@ button.ghost:hover { color: var(--accent); border-color: rgba(110, 231, 255, 0.4
   pointer-events: none;
 }
 .lrc-wrap {
-  position: relative; padding: 20px 30px 18px;
-  border-radius: 22px;
-  background: radial-gradient(120% 130% at 50% 40%, rgba(4, 7, 18, 0.74) 0%, rgba(4, 7, 18, 0.52) 55%, rgba(4, 7, 18, 0) 100%);
-  backdrop-filter: blur(9px);
-  -webkit-backdrop-filter: blur(9px);
+  position: relative; display: inline-block;
+  padding: 10px 26px 9px;
+  border-radius: 18px;
+  background: radial-gradient(120% 130% at 50% 40%, rgba(4, 7, 18, 0.66) 0%, rgba(4, 7, 18, 0.42) 60%, rgba(4, 7, 18, 0) 100%);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   text-align: center;
 }
 .lrc-prev {

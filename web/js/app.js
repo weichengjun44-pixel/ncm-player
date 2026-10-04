@@ -167,6 +167,7 @@ function playIndex(i) {
   visual.clearCover();
 
   state.current = song;
+  visual.clearLyricParticles();     // 换歌：旧歌词粒子散掉
   els.title.textContent = song.name;
   els.artist.textContent = song.artists.join(' / ') + (song.album ? ' · ' + song.album : '');
   els.cover.classList.remove('ok');
@@ -286,18 +287,24 @@ function tickLyrics() {
   const cur = state.lyrics[idx];
   const nxt = state.lyrics[idx + 1];
   const prev = idx > 0 ? state.lyrics[idx - 1] : null;
-  els.lrcPrev.textContent = prev ? prev.text : '';
-  if (cur) {
-    els.lrcNow.textContent = cur.text;
-    els.lrcNow.classList.add('show');
+
+  // 当前这句交给空间里的粒子去显示
+  const line = cur ? cur.text : (state.current ? state.current.name : '');
+  visual.setLyricParticles(line);
+
+  // DOM 只留"下一句"做提示；如果粒子歌词没生成出来，就退回 DOM 显示当前句
+  const particleOk = (visual.lyricPoints || 0) > 0;
+  els.lrcPrev.textContent = '';
+  els.lrcNext.textContent = nxt ? nxt.text : '';
+  els.lrcNext.classList.toggle('show', !!nxt);
+  if (particleOk) {
+    els.lrcNow.textContent = '';
+    els.lrcNow.classList.remove('show');
   } else {
-    els.lrcNow.textContent = state.current ? state.current.name : '';
+    els.lrcNow.textContent = line;
     els.lrcNow.classList.add('show');
   }
-  if (nxt) {
-    els.lrcNext.textContent = nxt.text;
-    els.lrcNext.classList.add('show');
-  } else els.lrcNext.classList.remove('show');
+  if (!cur && prev) els.lrcPrev.textContent = prev.text;
 }
 
 /* ----------------------------------------------------------- 进度 / 音量 */
@@ -612,7 +619,7 @@ if (new URLSearchParams(location.search).has('debug')) {
   setInterval(() => {
     const d = visual.debugInfo();
     els.dbg.textContent =
-      `封面粒子 ${d.coverPoints}\n${d.fps} fps · 视角 θ=${d.theta} r=${d.radius}\n能量 ${d.level}`;
+      `封面粒子 ${d.coverPoints} · 歌词粒子 ${d.lyricPoints}\n色组 ${d.palette} 色 · ${d.fps} fps\n视角 θ=${d.theta} r=${d.radius} · 能量 ${d.level}`;
   }, 600);
 }
 
