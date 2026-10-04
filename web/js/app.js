@@ -9,7 +9,7 @@ const $ = (s) => document.querySelector(s);
 const audio = $('#audio');
 const els = {
   boot: $('#boot'), list: $('#list'), panel: $('#panel'), panelTitle: $('#panelTitle'),
-  panelToggle: $('#panelToggle'), q: $('#q'), searchForm: $('#searchForm'),
+  panelToggle: $('#panelToggle'), panelPeek: $('#panelPeek'), q: $('#q'), searchForm: $('#searchForm'),
   cover: $('#cover'), coverBox: $('#coverBox'), title: $('#title'), artist: $('#artist'),
   play: $('#play'), icoPlay: $('#icoPlay'), icoPause: $('#icoPause'),
   prev: $('#prev'), next: $('#next'), bar: $('#bar'), fill: $('#fill'), knob: $('#knob'),
@@ -414,6 +414,11 @@ function reloadCurrent() {
 els.panelToggle.addEventListener('click', () => {
   els.panel.classList.toggle('collapsed');
   els.panelToggle.textContent = els.panel.classList.contains('collapsed') ? '+' : '−';
+});
+
+els.panelPeek.addEventListener('click', () => {
+  els.panel.classList.remove('collapsed');
+  els.panelToggle.textContent = '−';
 });
 
 audio.addEventListener('play', updatePlayIcon);

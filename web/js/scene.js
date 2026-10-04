@@ -359,12 +359,8 @@ export class VisualEngine {
       this.scene.add(this.dust);
     }
 
-    // ---- 核心光团（用色组里的颜色，不用纯白）----
-    this.core = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffd9a8, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }),
-    );
-    this.core.scale.setScalar(18);
-    this.scene.add(this.core);
+    // ---- 封面正中的核心光团：按需求已删除（原来是一团贴在封面中心、随音量呼吸的加色光晕）----
+    this.core = null;
 
     // ---- 频谱光环：按需求已删除（原来绕着封面的那圈粒子环）----
     this.halo = null;
@@ -412,8 +408,8 @@ export class VisualEngine {
       this.video.style.cssText = 'position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
       document.body.appendChild(this.video);
 
-      this.VW = 192;                       // 采样分辨率（16:9）—— 平面放大后同步提密度
-      this.VH = 108;
+      this.VW = 320;                       // 采样分辨率（16:9）—— 对齐歌词的颗粒密度
+      this.VH = 180;
       this.videoCanvas = document.createElement('canvas');
       this.videoCanvas.width = this.VW;
       this.videoCanvas.height = this.VH;
@@ -435,7 +431,7 @@ export class VisualEngine {
           pos[i * 3 + 1] = -(y - this.VH / 2 + 0.5) * cellH + (Math.random() - 0.5) * cellH * 0.7;
           pos[i * 3 + 2] = (Math.random() - 0.5) * 2.5;
           seed[i] = Math.random();
-          size[i] = 1.7 + Math.random() * 1.0;
+          size[i] = 1.4 + Math.random() * 0.8;
         }
       }
       const g = new THREE.BufferGeometry();
@@ -822,7 +818,6 @@ export class VisualEngine {
     // ---- 色组：从封面里提取调色板，再把粒子颜色重映射进去 ----
     const palette = this.derivePalette(data, W, H);
     this.palette = palette;
-    if (palette[0]) this.core.material.color.copy(palette[0]).lerp(new THREE.Color('#ffe8c4'), 0.35);
 
     const homes = [], scatters = [], colors = [], seeds = [];
     const planeW = COVER_W;
@@ -947,7 +942,7 @@ export class VisualEngine {
       const N = VW * VH;
       for (let i = 0; i < N; i++) {
         const o = i * 4;
-        const f = this.videoFade[i] * 0.40;   // 边缘渐隐 + 整体压暗
+        const f = this.videoFade[i] * 0.145;  // 边缘渐隐 + 按密度等比压暗（粒子数 ×2.78）
         col[i * 3] = (d[o] / 255) * f;
         col[i * 3 + 1] = (d[o + 1] / 255) * f;
         col[i * 3 + 2] = (d[o + 2] / 255) * f;
@@ -1047,9 +1042,6 @@ export class VisualEngine {
       m.uniforms.uTreble.value = treble;
       m.uniforms.uLevel.value = level;
     }
-
-    this.core.scale.setScalar(12 + bass * 24 + kick * 8);
-    this.core.material.opacity = 0.22 + level * 0.3;
 
     this.updateHalo();
     this.updateRipples(dt);
